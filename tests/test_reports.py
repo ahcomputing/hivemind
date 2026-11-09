@@ -30,7 +30,11 @@ def test_create_and_list_shared_report(client):
 
 
 def test_home_renders(client):
-    assert client.get("/").status_code == 200
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'class="hm-topbar"' in response.text
+    assert "/static/ui/topbar.css" in response.text
+    assert "/static/ui/topbar.js" in response.text
 
 
 def test_validation_and_past_custom_expiration(client):
@@ -83,7 +87,7 @@ def test_user_content_is_client_escaped(client):
     csrf = bootstrap(client)
     assert post_report(client, csrf, content="<img src=x onerror=alert(1)>").status_code == 201
     script = Path("hivemind/static/app.js").read_text()
-    assert "escapeHtml(r.content)" in script
+    assert "escapeHtml(report.content)" in script
 
 
 def test_readiness_reflects_database_availability(client):

@@ -5,6 +5,8 @@
 *.key
 credentials/
 private-notes/
+private-evidence/
+hivemind/static/ui/_apptest.html
 spec.md
 HiveMind_event_baseline.md
 __pycache__/
@@ -19,4 +21,3 @@ build/
 *.egg-info/
 data/
 .DS_Store
-
