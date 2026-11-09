@@ -41,6 +41,12 @@ def test_home_renders(client):
     assert 'href="/reports"' in response.text
 
 
+def test_opportunity_card_spans_the_report_grid_when_it_has_no_avatar(client):
+    stylesheet = client.get("/static/app.css")
+    assert stylesheet.status_code == 200
+    assert ".report > :only-child { grid-column:1 / -1; min-width:0; }" in stylesheet.text
+
+
 def test_validation_and_past_custom_expiration(client):
     csrf = bootstrap(client)
     assert post_report(client, csrf, content=" ").status_code == 422
