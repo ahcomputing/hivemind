@@ -29,7 +29,10 @@ spec:
             - {name: COOKIE_SECURE, value: "true"}
             - {name: ELASTICSEARCH_URL, value: http://elasticsearch:9200}
             - {name: ELASTICSEARCH_INDEX_PREFIX, value: hivemind}
-            - {name: AVATAR_BASE_URL, value: https://robohash.ahcomputing.com}
+            # Keep avatar requests same-origin in the browser. Android marks
+            # Tailnet/private address fetches as local-network access.
+            - {name: AVATAR_BASE_URL, value: /avatars}
+            - {name: AVATAR_SERVICE_URL, value: http://robohash.robohash.svc.cluster.local}
             - {name: EVOLUTION_ENABLED, value: "false"}
             # Dash0 receives only standard request telemetry. Keep this off until
             # the endpoint and authorization header are supplied out of band.

@@ -2,10 +2,15 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import secrets
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, time, timedelta
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import Request as UrlRequest
+from urllib.request import urlopen
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
@@ -31,6 +36,8 @@ COOKIE_NAME = "hivemind_session"
 CSRF_COOKIE_NAME = "hivemind_csrf"
 START_PAST_TOLERANCE = timedelta(minutes=5)
 START_FUTURE_LIMIT = timedelta(days=7)
+AVATAR_SEED = re.compile(r"[A-Za-z0-9_-]{1,128}")
+MAX_AVATAR_BYTES = 1_000_000
 
 
 def public_report(report: dict) -> dict:
@@ -119,6 +126,29 @@ async def database_or_503(request: Request) -> ElasticsearchRepository:
     return repository
 
 
+def load_avatar_png(seed: str, avatar_service_url: str) -> bytes:
+    """Fetch a bounded PNG from the fixed cluster-local RoboHash Service."""
+    avatar_url = (
+        f"{avatar_service_url.rstrip('/')}/robot/{quote(seed, safe='')}.png?set=set1&size=80x80"
+    )
+    request = UrlRequest(avatar_url, headers={"Accept": "image/png"})
+    with urlopen(request, timeout=3) as response:
+        if response.status != 200 or response.headers.get_content_type() != "image/png":
+            raise ValueError("RoboHash returned an unexpected response")
+        image = response.read(MAX_AVATAR_BYTES + 1)
+    if len(image) > MAX_AVATAR_BYTES:
+        raise ValueError("RoboHash avatar exceeds the maximum size")
+    return image
+
+
+async def fetch_avatar_png(seed: str, avatar_service_url: str) -> bytes:
+    try:
+        return await asyncio.to_thread(load_avatar_png, seed, avatar_service_url)
+    except (HTTPError, URLError, TimeoutError, ValueError) as error:
+        logger.info("Avatar proxy unavailable: %s", type(error).__name__)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "avatar unavailable") from error
+
+
 async def owned_session(request: Request, repository: ElasticsearchRepository) -> tuple[str, dict]:
     value = request.cookies.get(COOKIE_NAME)
     if not value or "." not in value:
@@ -176,6 +206,17 @@ def create_app(
         if not await get_repository(request).ready():
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "database unavailable")
         return {"status": "ready"}
+
+    @app.get("/avatars/{avatar_seed}.png")
+    async def avatar(avatar_seed: str, request: Request):
+        if not AVATAR_SEED.fullmatch(avatar_seed):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "avatar not found")
+        image = await fetch_avatar_png(avatar_seed, request.app.state.settings.avatar_service_url)
+        return Response(
+            image,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"},
+        )
 
     @app.post("/api/session/bootstrap")
     async def bootstrap(request: Request, response: Response):

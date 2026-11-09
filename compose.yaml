@@ -1,4 +1,11 @@
 services:
+  robohash:
+    image: ghcr.io/e1ven/robohash:v2.1@sha256:2bb0b5d4d153149fb3b790b67da74c1036fe8209a3378795080bd67cf62116a4
+    environment:
+      PORT: "8080"
+      HOME: /tmp
+      PYTHONDONTWRITEBYTECODE: "1"
+    tmpfs: [/tmp]
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
     environment:
@@ -17,7 +24,10 @@ services:
     env_file: .env
     environment:
       ELASTICSEARCH_URL: http://elasticsearch:9200
+      AVATAR_SERVICE_URL: http://robohash:8080
     ports: ["8080:8080"]
     depends_on:
       elasticsearch:
         condition: service_healthy
+      robohash:
+        condition: service_started

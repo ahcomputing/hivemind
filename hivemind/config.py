@@ -34,11 +34,11 @@ class Settings(BaseSettings):
     evolution_schedule: str | None = None
     report_rate_limit_count: int = 5
     report_rate_limit_seconds: int = 60
-    # Avatars are rendered by HiveMind's own RoboHash instance (k8s/robohash/),
-    # so the browser makes no third-party request. Point this at robohash.org
-    # to fall back to the public service; the privacy notice must then regain
-    # its third-party caveat.
-    avatar_base_url: str = "https://robohash.ahcomputing.com"
+    # The browser asks HiveMind for each avatar so its public connection never
+    # reaches an internal-address RoboHash host directly. The app then uses
+    # this fixed, cluster-local service URL; it is not supplied by a browser.
+    avatar_base_url: str = "/avatars"
+    avatar_service_url: str = "http://robohash.robohash.svc.cluster.local"
 
     @model_validator(mode="after")
     def validate_runtime_settings(self) -> "Settings":
