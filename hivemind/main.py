@@ -139,6 +139,7 @@ def create_app(
                 return {
                     "csrf_token": csrf_token,
                     "avatar_seed": existing_session["avatar_seed"],
+                    "avatar_base_url": runtime_settings.avatar_base_url,
                     "existing": True,
                 }
         session_id, session_secret, csrf_token, avatar_seed = (
@@ -176,7 +177,12 @@ def create_app(
             max_age=60 * 60 * 24 * 30,
             path="/",
         )
-        return {"csrf_token": csrf_token, "avatar_seed": avatar_seed, "existing": False}
+        return {
+            "csrf_token": csrf_token,
+            "avatar_seed": avatar_seed,
+            "avatar_base_url": runtime_settings.avatar_base_url,
+            "existing": False,
+        }
 
     @app.get("/api/reports")
     async def reports(request: Request, category: str | None = None):

@@ -1,0 +1,22 @@
+# CLUSTER-SCOPED CHANGE, EXPLICITLY APPROVED.
+#
+# .gitar/review/README.md requires Kubernetes changes to stay namespace-scoped
+# unless explicitly approved. This Namespace is the exception, and this comment
+# is the record of that approval.
+#
+#   Approved by: Aaron Hendricks (repository owner), 2026-11-09.
+#   Decision:    run RoboHash as a shared fleet service on its own host
+#                (robohash.ahcomputing.com) rather than as a path on the
+#                HiveMind ingress, so other projects can use the same instance.
+#   Alternative considered and rejected: a Deployment and Service inside the
+#                existing `hivemind` namespace behind /avatar/, which would have
+#                stayed namespace-scoped but tied the service to one app.
+#
+# The manifest is kept in version control rather than pre-provisioned by hand
+# so the deployment stays reproducible from this repository alone.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: robohash
+  labels:
+    app.kubernetes.io/part-of: robohash

@@ -466,3 +466,85 @@ def svg_bar_frame(state: str, t: float) -> str:
         f'<g transform="translate({JAR_W} 0)">{board("frame", state, t)}</g>'
         f'</svg>'
     )
+
+
+# ----------------------------------------------------------------------- icon
+# The app icon is a DIFFERENT DRAWING of the same object, not a scaled-down
+# copy of the top bar. At 16 px the bar's 1.3-unit glass outline, 1.1-unit
+# gyri, bubbles, rivets and blur filters are all sub-pixel and composite into
+# a purple smudge. So: fewer parts, thicker strokes, flat high-contrast fills.
+#
+# Flat fills rather than the gradients in defs() also mean the icon SVG is
+# self-contained, with no <defs> ids that could collide with the inline
+# top-bar SVG when both are present in one document.
+
+ICON_BOX = 64
+ICON_PLATE_BG = "#1b0f30"   # top stop of the top bar's gradient
+ICON_BODY_BG = "#12091f"    # app.css body background
+ICON_RADIUS = 8             # 12.5% of ICON_BOX
+
+ICON_FLUID = "#2a0f52"
+ICON_BRAIN = "#c98bf5"
+ICON_BRAIN_EDGE = "#2a0f52"
+ICON_METAL = "#6f5f92"
+ICON_GLASS = "#d9c6ff"
+
+# "plate": rounded square, 48-unit content box -> 8 units of padding.
+# "maskable": full bleed. The safe zone is the circle of radius 40% of the
+# icon, and the largest square inside that circle is 0.8/sqrt(2) = 56.5% of
+# the width; 55% leaves a little margin. Launchers may crop to any shape, and
+# everything outside the square is plain background, so nothing can be cut.
+_ICON_FIT = {
+    "plate": 48.0 / BAR_H,       # 0.545
+    "maskable": 0.55 * ICON_BOX / BAR_H,
+}
+
+
+def icon_jar() -> str:
+    """The jar alone, redrawn to stay legible at favicon sizes."""
+    hemi = (f'<path d="{_HEMI}" fill="{ICON_BRAIN}" stroke="{ICON_BRAIN_EDGE}" '
+            f'stroke-width="1.6" stroke-linejoin="round"/>')
+    return f"""<g>
+  <path d="M10 70 h56 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-56 a4 4 0 0 1 -4 -4 v-8 a4 4 0 0 1 4 -4 z"
+        fill="{ICON_METAL}"/>
+  <path d="M15 {FLUID_TOP} h46 v40 a6 6 0 0 1 -6 6 h-34 a6 6 0 0 1 -6 -6 z" fill="{ICON_FLUID}"/>
+  <g transform="translate(38 40) scale(.8) translate(-38 -40)">
+    <path d="M36.2 51 h3.6 l.7 5.4 a2.3 2.3 0 0 1 -2.3 2.7 h-.4 a2.3 2.3 0 0 1 -2.3 -2.7 z"
+          fill="{ICON_BRAIN}" stroke="{ICON_BRAIN_EDGE}" stroke-width="1.6" stroke-linejoin="round"/>
+    {hemi}
+    <g transform="translate(76 0) scale(-1 1)">{hemi}</g>
+  </g>
+  <path d="M15 14 h46 v52 a6 6 0 0 1 -6 6 h-34 a6 6 0 0 1 -6 -6 z" fill="none"
+        stroke="{ICON_GLASS}" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M21 22 v38" stroke="#ffffff" stroke-opacity=".38" stroke-width="3"
+        stroke-linecap="round" fill="none"/>
+  <rect x="11" y="5" width="54" height="11" rx="4" fill="{ICON_METAL}"/>
+</g>"""
+
+
+def svg_icon(variant: str = "plate") -> str:
+    """A standalone square icon SVG.
+
+    variant "plate"    -> rounded card, for the favicon and the `any` PWA icons.
+    variant "maskable" -> full bleed and opaque, for the `maskable` PWA icons
+                          and apple-touch-icon (iOS composites alpha onto black,
+                          so a rounded plate there would show a dark halo).
+    """
+    if variant not in _ICON_FIT:
+        raise ValueError(f"unknown icon variant {variant!r}")
+    scale = _ICON_FIT[variant]
+    dx = (ICON_BOX - JAR_W * scale) / 2
+    dy = (ICON_BOX - BAR_H * scale) / 2
+    if variant == "plate":
+        bg = (f'<rect width="{ICON_BOX}" height="{ICON_BOX}" rx="{ICON_RADIUS}" '
+              f'fill="{ICON_PLATE_BG}"/>')
+        dy = 8.0   # optically centred: the jar reads bottom-heavy
+    else:
+        bg = f'<rect width="{ICON_BOX}" height="{ICON_BOX}" fill="{ICON_PLATE_BG}"/>'
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {ICON_BOX} {ICON_BOX}" '
+        f'width="{ICON_BOX}" height="{ICON_BOX}" role="img" '
+        f'aria-label="HiveMind: a brain in a jar">{bg}'
+        f'<g transform="translate({_esc(dx)} {_esc(dy)}) scale({_esc(scale)})">{icon_jar()}</g>'
+        f'</svg>'
+    )

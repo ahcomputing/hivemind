@@ -6,7 +6,7 @@ HiveMind is an attendee-powered, mobile-first conference signal board. This firs
 
 - A purple, keyboard-accessible report form and polling feed (15 seconds) with a Coffee filter.
 - Reports of up to 500 characters, optional location and category, and 15-minute, one-hour, end-of-day, or future custom expiry. Storage is UTC; the browser displays America/Denver time.
-- Avatar-only reporter identity: no username, handle, or display name is created. An HttpOnly session cookie contains a private random identifier plus secret; only SHA-256 hashes of secrets live in Elasticsearch. A separate public random avatar seed is sent to RoboHash. Failed avatar images fall back to a local robot glyph.
+- Avatar-only reporter identity: no username, handle, or display name is created. An HttpOnly session cookie contains a private random identifier plus secret; only SHA-256 hashes of secrets live in Elasticsearch. A separate public random avatar seed is sent to HiveMind's own self-hosted RoboHash instance. Failed avatar images fall back to a local robot glyph.
 - CSRF checks, ownership checks, server-side validation, escaped client rendering, query-time active/expiration filtering, and a persistent per-session anonymous write limit.
 - Optional Dash0-compatible OpenTelemetry tracing, shipped disabled. It uses the standard OTLP/HTTP exporter, so no Dash0 SDK is coupled into the request path.
 - Elasticsearch is the only primary application store. The mapped indices are `hivemind_sessions` and `hivemind_reports` by default; set `ELASTICSEARCH_INDEX_PREFIX` to isolate an environment.
@@ -73,9 +73,33 @@ GitHub Actions runs Ruff and pytest, then publishes only an immutable `ghcr.io/a
 
 ## Privacy, security, and limitations
 
-RoboHash is a third-party request made by the browser using only the public avatar seed. It does not receive session IDs, session secrets, IP addresses from the app, or report text; a network observer at RoboHash still receives the browser request. Clearing browser data gives that browser a new robot. Robots are the only public attribution, not accounts or proof of a unique person.
+Avatars are rendered by a RoboHash instance HiveMind runs itself (`k8s/robohash/`), so no third party receives the request. The avatar request carries only the public random seed: no session IDs, session secrets, IP addresses from the app, or report text. If that instance is unreachable the browser shows a local glyph rather than falling back to the public service, so the avatar seed never leaves this infrastructure. The honest limitation runs the other way: avatars now depend on the cluster being up. Set `AVATAR_BASE_URL=https://robohash.org` to use the public service instead, which reinstates the third-party request. No Content-Security-Policy is set today; when one is added, `img-src` must cover the configured avatar origin. Clearing browser data gives that browser a new robot. Robots are the only public attribution, not accounts or proof of a unique person.
 
 This release has no login, author edits, moderator UI, flags, questions/replies, official content import, search UI, provenance, backup automation, high availability, or accessibility certification. Elasticsearch is single-node and therefore not highly available. Longhorn protects the volume, not service availability. Mobile layout and keyboard controls are implemented and covered by source-level checks, but a real phone-on-cellular test remains a public-launch gate.
+
+## Avatars and attribution
+
+Avatars come from a RoboHash instance HiveMind runs on its own cluster rather than
+from the public service. The manifests are in `k8s/robohash/`; it is a stateless
+Deployment of upstream's published image pinned by digest, on its own host so other
+projects can share it. Deploy it with `kubectl apply -k k8s/robohash/`, and point the
+app at it with `AVATAR_BASE_URL`.
+
+That bundle creates a `robohash` Namespace, which is a cluster-scoped object and
+so an exception to the namespace-scoped rule in `.gitar/review/README.md`. The
+approval for it, who gave it and the alternative that was rejected are recorded
+in the header of `k8s/robohash/namespace.yaml`.
+
+RoboHash's Python code is MIT. Its artwork is Creative Commons and per-set, so
+self-hosting it means carrying the attribution ourselves:
+
+- **set1, "classic robots" (in use): Zikri Kader, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).**
+- set2 monsters: Hrvoje Novakovic, CC BY 3.0. set3 robot heads: Julian Peter Arias,
+  CC BY 3.0. set4 cats: David Revoy, CC BY 4.0. set5 humans: Pablo Stanley. set6
+  cosmic apes: OceanSlim, CC0.
+
+If you change the `set=` parameter in `avatar()` in `hivemind/static/app.js`, update
+the credit line in the page footer to match the artist for that set.
 
 ## AI assistance and review
 

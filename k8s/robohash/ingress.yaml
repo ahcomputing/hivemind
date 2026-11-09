@@ -1,0 +1,24 @@
+# cert-manager's ingress-shim creates the Certificate from the annotation;
+# there is no standalone Certificate resource in this cluster's house style.
+# DNS-01 issuance routinely takes 5-30 minutes and a pending Challenge inside
+# that window is normal -- do not re-apply or delete anything to hurry it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: robohash
+  namespace: robohash
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-porkbun
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [robohash.ahcomputing.com]
+      secretName: robohash-ahcomputing-tls
+  rules:
+    - host: robohash.ahcomputing.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: robohash, port: {name: http}}}

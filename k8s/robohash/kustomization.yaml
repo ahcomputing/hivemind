@@ -1,0 +1,9 @@
+# Deliberately NOT referenced from k8s/kustomization.yaml: RoboHash is a
+# cluster-shared fleet service with its own lifecycle, not part of HiveMind's
+# deploy. Apply it with: kubectl apply -k k8s/robohash/
+#
+# namespace.yaml is cluster-scoped. See the approval recorded in its header
+# before changing how it is provisioned.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [namespace.yaml, app.yaml, ingress.yaml]
