@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 MOUNTAIN = ZoneInfo("America/Denver")
 COOKIE_NAME = "hivemind_session"
 CSRF_COOKIE_NAME = "hivemind_csrf"
+START_PAST_TOLERANCE = timedelta(minutes=5)
+START_FUTURE_LIMIT = timedelta(days=7)
 
 
 def public_report(report: dict) -> dict:
@@ -53,21 +55,27 @@ def as_utc(value: datetime, default_timezone: ZoneInfo = MOUNTAIN) -> datetime:
 
 
 def start_for(payload: ReportInput, now: datetime) -> datetime:
-    return as_utc(payload.starts_at) if payload.starts_at else now
+    start = as_utc(payload.starts_at) if payload.starts_at else now
+    if start < now - START_PAST_TOLERANCE:
+        raise HTTPException(422, "report start cannot be more than five minutes in the past")
+    if start > now + START_FUTURE_LIMIT:
+        raise HTTPException(422, "report start cannot be more than seven days in the future")
+    return start
 
 
 def expiry_for(payload: ReportInput, now: datetime) -> datetime:
     start = start_for(payload, now)
     duration_minutes = {"15m": 15, "30m": 30, "45m": 45, "1h": 60, "75m": 75, "90m": 90, "105m": 105, "120m": 120}
     if payload.expiration in duration_minutes:
-        return start + timedelta(minutes=duration_minutes[payload.expiration])
-    if payload.expiration == "end_of_day":
-        return datetime.combine(start.astimezone(MOUNTAIN).date(), time.max, MOUNTAIN).astimezone(UTC)
-    if payload.custom_expires_at is None:
-        raise HTTPException(422, "custom expiration requires custom_expires_at")
-    result = as_utc(payload.custom_expires_at)
-    if result <= start:
-        raise HTTPException(422, "expiration must be after the report start")
+        result = start + timedelta(minutes=duration_minutes[payload.expiration])
+    elif payload.expiration == "end_of_day":
+        result = datetime.combine(start.astimezone(MOUNTAIN).date(), time.max, MOUNTAIN).astimezone(UTC)
+    else:
+        if payload.custom_expires_at is None:
+            raise HTTPException(422, "custom expiration requires custom_expires_at")
+        result = as_utc(payload.custom_expires_at)
+        if result <= start:
+            raise HTTPException(422, "expiration must be after the report start")
     if result <= now:
         raise HTTPException(422, "expiration must be in the future")
     return result
@@ -316,7 +324,10 @@ def create_app(
                 response["generation_status"] = "cached"
                 return response
 
-        lock_expires_at = now + timedelta(seconds=runtime_settings.openai_summary_timeout_seconds)
+        # Keep the cross-replica lock beyond the request timeout so the
+        # accounting round trips and final evidence revalidation cannot open a
+        # second paid request for the same evidence at the timeout boundary.
+        lock_expires_at = now + timedelta(seconds=runtime_settings.openai_summary_timeout_seconds + 15)
         claimed = await repository.claim_opportunity_generation(
             cache_id, evidence_hash, payload.window_minutes, now, lock_expires_at
         )

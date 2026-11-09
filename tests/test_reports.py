@@ -68,6 +68,12 @@ def test_extended_expiry_and_scheduled_start(client):
         custom_expires_at=(start - timedelta(minutes=1)).isoformat(),
     )
     assert bad.status_code == 422
+    assert post_report(
+        client, csrf, expiration="15m", starts_at=(datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    ).status_code == 422
+    assert post_report(
+        client, csrf, starts_at=(datetime.now(UTC) + timedelta(days=8)).isoformat()
+    ).status_code == 422
 
 
 def test_custom_expiry_is_resolved_in_mountain_time_with_dst():
