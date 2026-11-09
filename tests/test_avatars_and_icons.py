@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import hivemind.main as main
 from hivemind.config import Settings
 from hivemind.main import create_app
 from tests.conftest import FakeRepository
@@ -21,7 +22,7 @@ MANIFEST = Path("hivemind/static/ui/manifest.json")
 
 def test_bootstrap_exposes_the_avatar_base(client):
     data = client.post("/api/session/bootstrap").json()
-    assert data["avatar_base_url"] == "https://robohash.ahcomputing.com"
+    assert data["avatar_base_url"] == "/avatars"
 
 
 def test_returning_session_also_gets_the_avatar_base(client):
@@ -30,7 +31,7 @@ def test_returning_session_also_gets_the_avatar_base(client):
     client.post("/api/session/bootstrap")
     again = client.post("/api/session/bootstrap").json()
     assert again["existing"] is True
-    assert again["avatar_base_url"] == "https://robohash.ahcomputing.com"
+    assert again["avatar_base_url"] == "/avatars"
 
 
 def test_avatar_base_is_configurable(settings):
@@ -43,14 +44,50 @@ def test_avatar_base_is_configurable(settings):
 
 
 def test_default_avatar_base_is_self_hosted():
-    # A misconfigured deploy must not silently fall back to the public service.
-    assert "robohash.org" not in Settings(_env_file=None).avatar_base_url
+    # The browser must not connect directly to any RoboHash origin.
+    assert Settings(_env_file=None).avatar_base_url == "/avatars"
 
 
 def test_client_does_not_hardcode_the_public_service():
     source = Path("hivemind/static/app.js").read_text()
     assert "avatarBase" in source
     assert "robohash.org" not in source
+
+
+def test_avatar_proxy_returns_a_cacheable_png(client, monkeypatch):
+    calls = []
+
+    async def fake_fetch(seed, service_url):
+        calls.append((seed, service_url))
+        return b"png-bytes"
+
+    monkeypatch.setattr(main, "fetch_avatar_png", fake_fetch)
+    response = client.get("/avatars/robot_abc-123.png")
+
+    assert response.status_code == 200
+    assert response.content == b"png-bytes"
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["cache-control"].startswith("public, max-age=86400")
+    assert calls == [("robot_abc-123", "http://robohash.robohash.svc.cluster.local")]
+
+
+@pytest.mark.parametrize("path", ["/avatars/not.valid.png", "/avatars/.png"])
+def test_avatar_proxy_rejects_invalid_seeds_without_fetching(client, monkeypatch, path):
+    async def unexpected_fetch(*_args):
+        raise AssertionError("invalid seeds must not reach RoboHash")
+
+    monkeypatch.setattr(main, "fetch_avatar_png", unexpected_fetch)
+    assert client.get(path).status_code == 404
+
+
+def test_avatar_proxy_returns_a_safe_error_when_robohash_is_unavailable(client, monkeypatch):
+    async def unavailable(*_args):
+        raise main.HTTPException(status_code=502, detail="avatar unavailable")
+
+    monkeypatch.setattr(main, "fetch_avatar_png", unavailable)
+    response = client.get("/avatars/robot_abc.png")
+    assert response.status_code == 502
+    assert response.json()["detail"] == "avatar unavailable"
 
 
 def test_page_credits_the_cc_by_artwork(client):

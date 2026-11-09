@@ -28,7 +28,7 @@ The browser never talks to Elasticsearch. Session identifiers, session secret ha
 
 1. Copy `.env.example` to `.env`, then replace every `CHANGE_ME` value. The local `.env` is ignored. Development may use `COOKIE_SECURE=false`; production cannot.
 2. Install dependencies with `uv sync --all-groups`.
-3. Start authenticated Elasticsearch and the app: `docker compose up --build`.
+3. Start authenticated Elasticsearch, the self-hosted RoboHash renderer, and the app: `docker compose up --build`.
 4. Open `http://localhost:8080`. The app liveness endpoint is `/healthz`; `/readyz` returns 503 until Elasticsearch is reachable.
 
 Run checks with:
@@ -74,7 +74,7 @@ GitHub Actions runs Ruff and pytest, then publishes only an immutable `ghcr.io/a
 
 ## Privacy, security, and limitations
 
-Avatars are rendered by a RoboHash instance HiveMind runs itself (`k8s/robohash/`), so no third party receives the request. The avatar request carries only the public random seed: no session IDs, session secrets, IP addresses from the app, or report text. If that instance is unreachable the browser shows a local glyph rather than falling back to the public service, so the avatar seed never leaves this infrastructure. The honest limitation runs the other way: avatars now depend on the cluster being up. Set `AVATAR_BASE_URL=https://robohash.org` to use the public service instead, which reinstates the third-party request. No Content-Security-Policy is set today; when one is added, `img-src` must cover the configured avatar origin. Clearing browser data gives that browser a new robot. Robots are the only public attribution, not accounts or proof of a unique person.
+Avatars are rendered by a RoboHash instance HiveMind runs itself (`k8s/robohash/`), so no third party receives the request. The browser gets a same-origin `/avatars/<seed>.png` image; HiveMind validates the public seed and fetches only from the fixed cluster-local RoboHash Service. This prevents a phone from treating a private/Tailnet RoboHash address as a local-network request. The avatar request carries only the public random seed: no session IDs, session secrets, IP addresses from the app, or report text. If RoboHash is unreachable, the image request fails and the browser shows a local glyph rather than falling back to a public service, so the seed never leaves this infrastructure. The honest limitation runs the other way: avatars now depend on the cluster being up. No Content-Security-Policy is set today; when one is added, `img-src` can remain `'self'`. Clearing browser data gives that browser a new robot. Robots are the only public attribution, not accounts or proof of a unique person.
 
 This release has no login, author edits, moderator UI, flags, questions/replies, official content import, search UI, provenance, backup automation, high availability, or accessibility certification. Elasticsearch is single-node and therefore not highly available. Longhorn protects the volume, not service availability. Mobile layout and keyboard controls are implemented and covered by source-level checks, but a real phone-on-cellular test remains a public-launch gate.
 
@@ -84,7 +84,7 @@ Avatars come from a RoboHash instance HiveMind runs on its own cluster rather th
 from the public service. The manifests are in `k8s/robohash/`; it is a stateless
 Deployment of upstream's published image pinned by digest, on its own host so other
 projects can share it. Deploy it with `kubectl apply -k k8s/robohash/`, and point the
-app at it with `AVATAR_BASE_URL`.
+app at it with `AVATAR_SERVICE_URL`; the browser-facing `AVATAR_BASE_URL` stays `/avatars`.
 
 That bundle creates a `robohash` Namespace, which is a cluster-scoped object and
 so an exception to the namespace-scoped rule in `.gitar/review/README.md`. The
