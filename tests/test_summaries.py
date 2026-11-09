@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from hivemind.config import Settings
 from hivemind.main import create_app
+from hivemind.repository import as_datetime
 from hivemind.summaries import OpenAISummarizer, OpportunitySummary, SummaryBullet
 from tests.conftest import FakeRepository
 
@@ -118,6 +119,10 @@ def test_budget_months_are_isolated():
     assert asyncio.run(repository.reserve_openai_budget("2026-11", 100, 100, datetime.now(UTC)))
     assert not asyncio.run(repository.reserve_openai_budget("2026-11", 1, 100, datetime.now(UTC)))
     assert asyncio.run(repository.reserve_openai_budget("2026-12", 100, 100, datetime.now(UTC)))
+
+
+def test_elasticsearch_iso_dates_are_normalized_before_cache_comparisons():
+    assert as_datetime("2026-11-09T12:00:00Z") == datetime(2026, 11, 9, 12, tzinfo=UTC)
 
 
 def test_openai_request_has_strict_schema_and_excludes_private_report_fields():
