@@ -35,8 +35,10 @@ def test_home_renders(client):
     assert 'class="hm-topbar"' in response.text
     assert "/static/ui/topbar.css" in response.text
     assert "/static/ui/topbar.js" in response.text
-    assert "Each browser is represented only by a random robot avatar." in response.text
-    assert "random browser identity" not in response.text
+    assert "Opportunities nearby" in response.text
+    assert "Summarize opportunities in the next 30 minutes" in response.text
+    assert 'href="/share"' in response.text
+    assert 'href="/reports"' in response.text
 
 
 def test_validation_and_past_custom_expiration(client):
@@ -49,6 +51,23 @@ def test_validation_and_past_custom_expiration(client):
         custom_expires_at=(datetime.now(UTC) - timedelta(minutes=1)).isoformat(),
     )
     assert response.status_code == 422
+
+
+def test_extended_expiry_and_scheduled_start(client):
+    csrf = bootstrap(client)
+    start = datetime.now(UTC) + timedelta(minutes=20)
+    created = post_report(client, csrf, expiration="90m", starts_at=start.isoformat())
+    assert created.status_code == 201
+    report = created.json()["report"]
+    assert datetime.fromisoformat(report["expires_at"]) - datetime.fromisoformat(report["starts_at"]) == timedelta(minutes=90)
+    bad = post_report(
+        client,
+        csrf,
+        expiration="custom",
+        starts_at=start.isoformat(),
+        custom_expires_at=(start - timedelta(minutes=1)).isoformat(),
+    )
+    assert bad.status_code == 422
 
 
 def test_custom_expiry_is_resolved_in_mountain_time_with_dst():
@@ -89,7 +108,7 @@ def test_user_content_is_client_escaped(client):
     csrf = bootstrap(client)
     assert post_report(client, csrf, content="<img src=x onerror=alert(1)>").status_code == 201
     script = Path("hivemind/static/app.js").read_text()
-    assert "escapeHtml(report.content)" in script
+    assert "escapeHtml(r.content)" in script
 
 
 def test_readiness_reflects_database_availability(client):
@@ -97,3 +116,19 @@ def test_readiness_reflects_database_availability(client):
     client.app.state.repository.available = False
     assert client.get("/readyz").status_code == 503
     assert client.get("/api/reports").status_code == 503
+
+
+def test_pages_and_source_first_opportunity_endpoint(client):
+    for route in ("/", "/share", "/reports"):
+        assert client.get(route).status_code == 200
+    csrf = bootstrap(client)
+    assert client.post("/api/opportunities/summary", json={"window_minutes": 30}).status_code == 403
+    response = client.post(
+        "/api/opportunities/summary",
+        json={"window_minutes": 30},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["generation_status"] == "unavailable"
+    assert body["official_events"] == []

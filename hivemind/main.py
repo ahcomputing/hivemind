@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .config import Settings, get_settings
-from .models import ReportInput
+from .models import OpportunitySummaryInput, ReportInput
 from .repository import ElasticsearchRepository
 from .security import digest, token, verify
 
@@ -31,25 +31,33 @@ def public_report(report: dict) -> dict:
             "category",
             "expires_at",
             "created_at",
+            "starts_at",
             "avatar_seed",
         )
+        if key in report
     }
 
 
+def as_utc(value: datetime, default_timezone: ZoneInfo = MOUNTAIN) -> datetime:
+    return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=default_timezone).astimezone(UTC)
+
+
+def start_for(payload: ReportInput, now: datetime) -> datetime:
+    return as_utc(payload.starts_at) if payload.starts_at else now
+
+
 def expiry_for(payload: ReportInput, now: datetime) -> datetime:
-    if payload.expiration == "15m":
-        return now + timedelta(minutes=15)
-    if payload.expiration == "1h":
-        return now + timedelta(hours=1)
+    start = start_for(payload, now)
+    duration_minutes = {"15m": 15, "30m": 30, "45m": 45, "1h": 60, "75m": 75, "90m": 90, "105m": 105, "120m": 120}
+    if payload.expiration in duration_minutes:
+        return start + timedelta(minutes=duration_minutes[payload.expiration])
     if payload.expiration == "end_of_day":
-        return datetime.combine(now.astimezone(MOUNTAIN).date(), time.max, MOUNTAIN).astimezone(UTC)
+        return datetime.combine(start.astimezone(MOUNTAIN).date(), time.max, MOUNTAIN).astimezone(UTC)
     if payload.custom_expires_at is None:
         raise HTTPException(422, "custom expiration requires custom_expires_at")
-    result = (
-        payload.custom_expires_at.astimezone(UTC)
-        if payload.custom_expires_at.tzinfo
-        else payload.custom_expires_at.replace(tzinfo=MOUNTAIN).astimezone(UTC)
-    )
+    result = as_utc(payload.custom_expires_at)
+    if result <= start:
+        raise HTTPException(422, "expiration must be after the report start")
     if result <= now:
         raise HTTPException(422, "expiration must be in the future")
     return result
@@ -101,7 +109,15 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     async def home(request: Request):
-        return templates.TemplateResponse(request, "index.html", {"poll_seconds": 15})
+        return templates.TemplateResponse(request, "index.html", {})
+
+    @app.get("/share", response_class=HTMLResponse)
+    async def share(request: Request):
+        return templates.TemplateResponse(request, "share.html", {})
+
+    @app.get("/reports", response_class=HTMLResponse)
+    async def report_feed(request: Request):
+        return templates.TemplateResponse(request, "reports.html", {"poll_seconds": 15})
 
     @app.get("/healthz")
     async def healthz():
@@ -198,6 +214,7 @@ def create_app(
         if not csrf_token or not secrets.compare_digest(digest(csrf_token), session["csrf_hash"]):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF validation failed")
         now = datetime.now(UTC)
+        starts_at = start_for(payload, now)
         expires_at = expiry_for(payload, now)
         rate_window = int(now.timestamp() // runtime_settings.report_rate_limit_seconds)
         if not await repository.consume_report_slot(
@@ -213,12 +230,42 @@ def create_app(
             "category": payload.category,
             "expires_at": expires_at,
             "created_at": now,
+            "starts_at": starts_at,
             "status": "active",
             "session_id": session_id,
             "avatar_seed": session["avatar_seed"],
         }
         await repository.create_report(report_id, document)
         return {"report": public_report({"id": report_id, **document})}
+
+    @app.post("/api/opportunities/summary")
+    async def opportunity_summary(payload: OpportunitySummaryInput, request: Request):
+        """Return source cards now; paid synthesis remains an explicit opt-in."""
+        repository = await database_or_503(request)
+        _, session = await owned_session(request, repository)
+        csrf_token = request.headers.get("X-CSRF-Token", "")
+        if not csrf_token or not secrets.compare_digest(digest(csrf_token), session["csrf_hash"]):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF validation failed")
+        now = datetime.now(UTC)
+        window_end = now + timedelta(minutes=payload.window_minutes)
+        official, freshness = await repository.list_official_events_overlapping(now, window_end)
+        reports = await repository.list_reports_for_opportunities(window_end)
+        response = {
+            "window_minutes": payload.window_minutes,
+            "generated_at": now,
+            "schedule_freshness": freshness["fetched_at"] if freshness else None,
+            "official_events": official,
+            "attendee_reports": [public_report(report) for report in reports],
+            "selection_limited": len(official) == 40 or len(reports) == 40,
+            "summary": None,
+        }
+        if not request.app.state.settings.openai_summary_enabled:
+            response["generation_status"] = "unavailable"
+            response["generation_message"] = "AI summaries are not enabled. Source cards are shown instead."
+            return response
+        # The enabled implementation is introduced only with a reviewed model,
+        # verified current prices, and a durable shared ledger.
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "AI summary service is not configured")
 
     return app
 

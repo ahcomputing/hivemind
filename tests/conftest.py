@@ -12,6 +12,8 @@ class FakeRepository:
         self.sessions = {}
         self.reports = {}
         self.available = True
+        self.official_events = []
+        self.event_freshness = None
 
     async def close(self):
         return None
@@ -56,6 +58,23 @@ class FakeRepository:
             and report["expires_at"] > now
             and (not category or category == "all" or report["category"] == category)
         ]
+
+    async def list_official_events_overlapping(self, window_start, window_end, limit=40):
+        rows = [
+            row for row in self.official_events
+            if row["starts_at"] < window_end and row["ends_at"] > window_start
+        ][:limit]
+        return rows, self.event_freshness
+
+    async def list_reports_for_opportunities(self, window_end, limit=40):
+        now = datetime.now(UTC)
+        return [
+            {"id": report_id, **row}
+            for report_id, row in self.reports.items()
+            if row["status"] == "active"
+            and row["expires_at"] > now
+            and row.get("starts_at", row["created_at"]) < window_end
+        ][:limit]
 
 
 @pytest.fixture
