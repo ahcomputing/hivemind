@@ -76,6 +76,14 @@ def test_extended_expiry_and_scheduled_start(client):
     ).status_code == 422
 
 
+def test_relative_expirations_reject_past_scheduled_starts(client):
+    csrf = bootstrap(client)
+    start = datetime.now(UTC) - timedelta(days=1)
+    for expiration in ("15m", "end_of_day"):
+        response = post_report(client, csrf, expiration=expiration, starts_at=start.isoformat())
+        assert response.status_code == 422
+
+
 def test_custom_expiry_is_resolved_in_mountain_time_with_dst():
     now = datetime(2026, 6, 1, 12, tzinfo=UTC)
     result = expiry_for(
