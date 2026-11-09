@@ -4,13 +4,11 @@ metadata:
   name: hivemind
   namespace: hivemind
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-porkbun
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    # Public TLS terminates at the mailserver Nginx ingress. Traefik receives
+    # traffic only across the private LAN from that trusted reverse proxy.
+    traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
   ingressClassName: traefik
-  tls:
-    - hosts: [hivemind.ahcomputing.com]
-      secretName: hivemind-ahcomputing-tls
   rules:
     - host: hivemind.ahcomputing.com
       http:

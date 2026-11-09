@@ -14,10 +14,11 @@ HiveMind is an attendee-powered, mobile-first conference signal board. This firs
 ## Architecture
 
 ```text
-browser -- HTTPS --> Traefik Ingress --> FastAPI replicas --> internal Elasticsearch StatefulSet
-                                 |              |
-                                 |              +-- Jinja + minimal JavaScript, 15 s polling
-                                 +-- certificate issued by existing cert-manager
+browser -- HTTPS --> mailserver Nginx --> Traefik Ingress --> FastAPI replicas --> internal Elasticsearch StatefulSet
+                        |                    |              |
+                        |                    |              +-- Jinja + minimal JavaScript, 15 s polling
+                        |                    +-- private-LAN HTTP only
+                        +-- public Let's Encrypt certificate
 ```
 
 The browser never talks to Elasticsearch. Session identifiers, session secret hashes, CSRF hashes, and public avatar seeds are separate fields. A report stores the owning session identifier privately and only returns its public attributes to the feed. Expiration and status are filters in every public report query rather than a browser-only convention.
@@ -64,7 +65,9 @@ The container starts through `opentelemetry-instrument`, with `OTEL_SDK_DISABLED
 - a two-replica FastAPI Deployment, Service, Traefik Ingress for `hivemind.ahcomputing.com`, and health probes;
 - no production Secret values, DNS modification, cluster-wide resource, scheduler, or auto-promotion.
 
-Before any apply, run `scripts/preflight-cluster.sh`. It only reads cluster state and host `vm.max_map_count`; Elasticsearch needs a value of at least 262144 on each possible node. Confirm Longhorn's current schedulable capacity and two-replica health too. Do not change a node kernel setting or a storage-class default implicitly. The concrete ingress follows the currently observed Traefik + `letsencrypt-porkbun` convention; DNS/public routing and deployment are approval gates.
+Before any apply, run `scripts/preflight-cluster.sh`. It only reads cluster state and host `vm.max_map_count`; Elasticsearch needs a value of at least 262144 on each possible node. Confirm Longhorn's current schedulable capacity and two-replica health too. Do not change a node kernel setting or a storage-class default implicitly. Public TLS terminates at the mailserver Nginx ingress; the namespace-scoped Traefik rule intentionally accepts only its private-LAN HTTP hop. DNS/public routing and deployment are approval gates.
+
+After the app is healthy and `hivemind.ahcomputing.com` resolves to the mailserver's public address, copy `scripts/deploy_mailserver.py` to that host and run it there. It writes only the HiveMind virtual host, checks Nginx before each reload, keeps a timestamped backup of a prior script-managed version, verifies the private Traefik upstream, and invokes the mailserver's existing Certbot integration. Run with `--dry-run` first; supply `--email` only for a non-interactive first Certbot registration.
 
 GitHub Actions runs Ruff and pytest, then publishes only an immutable `ghcr.io/ahcomputing/hivemind:<commit-sha>` image on a `main` push. Publishing does not edit a manifest or deploy. Promote a reviewed SHA separately, substituting the exact image into `k8s/app.yaml`; configure a scoped image-pull secret only if GHCR remains private.
 
