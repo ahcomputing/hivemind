@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Add the top bar to hivemind/templates/index.html.
+"""Add the top bar, app icons and avatar attribution to index.html.
 
 Idempotent: run it again any time index.html gets rewritten from elsewhere
-and the four hooks are put back without duplicating anything.
+and every hook is put back without duplicating anything. That file is edited
+by other work too, so this script -- not a hand edit -- is how it gets wired.
 
 Usage:  python3 tools/ui/wire_topbar.py [--check]
 """
@@ -27,6 +28,41 @@ JS_ADD = '<script src="/static/ui/topbar.js" defer></script>'
 # The jar in the top bar is the mark now, so the emoji duplicate goes.
 EMOJI = '<div class="mark" aria-hidden="true">\U0001f9e0</div>'
 
+# Icons, manifest and social preview. og:image must be absolute -- nearly
+# every scraper refuses a relative one -- and there is exactly one host.
+SITE_URL = "https://hivemind.ahcomputing.com"
+HEAD_SENTINEL = "<!-- hm-head -->"
+HEAD_ADD = HEAD_SENTINEL + "".join([
+    '<link rel="icon" href="/static/ui/icons/favicon.svg" type="image/svg+xml">',
+    '<link rel="icon" href="/static/ui/icons/favicon-32.png" sizes="32x32" type="image/png">',
+    '<link rel="icon" href="/static/ui/icons/favicon.ico" sizes="48x48">',
+    '<link rel="apple-touch-icon" href="/static/ui/icons/apple-touch-icon.png">',
+    '<link rel="manifest" href="/static/ui/manifest.json">',
+    '<meta name="theme-color" content="#1b0f30">',
+    '<meta property="og:type" content="website">',
+    '<meta property="og:title" content="HiveMind \u2014 conference updates">',
+    '<meta property="og:description" content="What\u2019s happening right now, '
+    'shared by people here.">',
+    f'<meta property="og:image" content="{SITE_URL}/static/ui/icons/og-image.png">',
+    f'<meta property="og:url" content="{SITE_URL}/">',
+    '<meta name="twitter:card" content="summary_large_image">',
+])
+
+# CC-BY is a licence obligation, not a nicety: self-hosting the artwork means
+# we carry the attribution ourselves.
+CREDIT_SENTINEL = 'class="credit"'
+FOOTER_ANCHOR = re.compile(r"<footer\b[^>]*>")
+CREDIT_ADD = (
+    '<p class="credit">Robot avatars by '
+    '<a href="https://robohash.org">RoboHash</a> (MIT), self-hosted. '
+    'Classic robot set by Zikri Kader, '
+    '<a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.</p>'
+)
+
+# Wording that self-hosting makes untrue. Replacing a sentence is not safely
+# idempotent, so this is only ever warned about, never rewritten.
+STALE_CLAIMS = ("Robot avatars load from RoboHash",)
+
 
 def wire(text: str) -> tuple[str, list[str]]:
     done: list[str] = []
@@ -42,6 +78,8 @@ def wire(text: str) -> tuple[str, list[str]]:
         text = text[:m.end()] + addition + text[m.end():]
         done.append(what)
 
+    if HEAD_SENTINEL not in text:
+        insert_after(CSS_ANCHOR, HEAD_ADD, "icons and manifest")
     if "/static/ui/topbar.css" not in text:
         insert_after(CSS_ANCHOR, CSS_ADD, "stylesheet")
     if "_topbar.html" not in text:
@@ -59,6 +97,8 @@ def wire(text: str) -> tuple[str, list[str]]:
         # before app.js emits report-feed activity.
         text = text[:match.start()] + JS_ADD + app_script + text[match.end():]
         done.append("script")
+    if CREDIT_SENTINEL not in text:
+        insert_after(FOOTER_ANCHOR, CREDIT_ADD, "avatar attribution")
     if EMOJI in text:
         text = text.replace(EMOJI, "", 1)
         done.append("removed duplicate emoji mark")
@@ -76,9 +116,13 @@ def main() -> None:
         original = fh.read()
     updated, done = wire(original)
 
+    stale = [c for c in STALE_CLAIMS if c in original]
+    for claim in stale:
+        print(f"index.html: WARNING stale claim is back and needs rewriting by hand: {claim!r}")
+
     if args.check:
         print("index.html: wired" if not done else "index.html: MISSING " + ", ".join(done))
-        sys.exit(0 if not done else 1)
+        sys.exit(0 if not done and not stale else 1)
 
     if not done:
         print("index.html: already wired, nothing to do")

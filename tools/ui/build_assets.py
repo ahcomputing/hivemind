@@ -10,7 +10,10 @@ Pre-rendered sprite strips were evaluated as an alternative and dropped; the
 renderer is kept behind --sprites because the same frame machinery is useful
 for stills (social preview images, a favicon, docs screenshots).
 
-Usage:  python3 tools/ui/build_assets.py [--sprites [--frames 20] [--scale 2]]
+It also builds the app icons, web manifest and social preview image from the
+same artwork (--no-icons to skip).
+
+Usage:  python3 tools/ui/build_assets.py [--no-icons] [--sprites [--frames 20] [--scale 2]]
 """
 from __future__ import annotations
 
@@ -23,11 +26,10 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import brainjar as bj  # noqa: E402
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-ROOT = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.abspath(os.path.join(ROOT, "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 STATIC = os.path.join(ROOT, "hivemind", "static", "ui")
 SPRITES = os.path.join(STATIC, "sprites")
+ICONS = os.path.join(STATIC, "icons")
 TEMPLATES = os.path.join(ROOT, "hivemind", "templates")
 
 # Loop lengths chosen so each state's slowest moving part closes cleanly enough
@@ -126,13 +128,172 @@ def main() -> None:
     ap.add_argument("--scale", type=int, default=2)
     ap.add_argument("--sprites", action="store_true",
                     help="also render the pre-rendered sprite strips")
+    ap.add_argument("--no-icons", action="store_true",
+                    help="skip the app icons, manifest and social preview")
     args = ap.parse_args()
 
     print("inline  ->", build_inline())
+    if not args.no_icons:
+        for f in build_icons():
+            print("icon    ->", f)
     if args.sprites:
         for f in build_sprites(args.frames, args.scale):
             print("sprite  ->", f)
 
+
+
+# ----------------------------------------------------------------------- icons
+# "plate" is the rounded card used for the favicon and the `any` PWA icons.
+# "maskable" is full bleed and opaque: launchers crop it to an arbitrary shape,
+# and iOS composites alpha onto black, so apple-touch-icon uses it too.
+ICON_RENDERS = [
+    ("plate", 512, "icon-512.png"),
+    ("plate", 192, "icon-192.png"),
+    ("plate", 48, "favicon-48.png"),
+    ("plate", 32, "favicon-32.png"),
+    ("plate", 16, "favicon-16.png"),
+    ("maskable", 512, "icon-maskable-512.png"),
+    ("maskable", 192, "icon-maskable-192.png"),
+    ("maskable", 180, "apple-touch-icon.png"),
+]
+
+# Served from /static/..., so `scope` MUST be set explicitly: it otherwise
+# defaults to the manifest's own directory, which would put start_url out of
+# scope and silently make the app non-installable with no error anywhere.
+# The file is .json, not .webmanifest, because Python's mimetypes has no entry
+# for .webmanifest and Starlette would serve it as text/plain.
+MANIFEST = {
+    "_generated_by": "tools/ui/build_assets.py -- do not hand-edit",
+    "id": "/",
+    "name": "HiveMind — conference updates",
+    "short_name": "HiveMind",
+    "description": "What's happening right now, shared by people here.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "theme_color": bj.ICON_PLATE_BG,
+    "background_color": bj.ICON_BODY_BG,
+    "icons": [
+        {"src": "/static/ui/icons/icon-192.png", "sizes": "192x192",
+         "type": "image/png", "purpose": "any"},
+        {"src": "/static/ui/icons/icon-512.png", "sizes": "512x512",
+         "type": "image/png", "purpose": "any"},
+        {"src": "/static/ui/icons/icon-maskable-192.png", "sizes": "192x192",
+         "type": "image/png", "purpose": "maskable"},
+        {"src": "/static/ui/icons/icon-maskable-512.png", "sizes": "512x512",
+         "type": "image/png", "purpose": "maskable"},
+    ],
+}
+
+_FONT_DIR = "/usr/share/fonts/truetype/dejavu"
+
+
+def _inkscape(jobs: list[tuple[str, str, int, int]]) -> None:
+    """Render (svg_path, png_path, width, height) jobs in one Inkscape run."""
+    script = "".join(
+        f"file-open:{svg}; export-filename:{png}; export-width:{w}; "
+        f"export-height:{h}; export-do; file-close;\n"
+        for svg, png, w, h in jobs
+    )
+    subprocess.run(["inkscape", "--shell"], input=script + "quit\n",
+                   text=True, capture_output=True, check=False)
+    missing = [png for _, png, _, _ in jobs if not os.path.exists(png)]
+    if missing:
+        raise SystemExit(
+            "inkscape produced no output for: " + ", ".join(os.path.basename(m) for m in missing)
+            + "\nIs inkscape installed and on PATH?"
+        )
+
+
+def _og_image(dest: str, tmp: str) -> None:
+    """1200x630 social preview: the full bar artwork over the app background."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    svg = os.path.join(tmp, "og.svg")
+    png = os.path.join(tmp, "og-art.png")
+    with open(svg, "w") as fh:
+        fh.write(bj.svg_bar_frame("idle", 0.0))
+    arrt_w = 1120
+    _inkscape([(svg, png, arrt_w, round(arrt_w * bj.BAR_H / bj.BAR_W))])
+
+    canvas = Image.new("RGB", (1200, 630), bj.ICON_BODY_BG)
+    art = Image.open(png).convert("RGBA")
+    canvas.paste(art, ((1200 - art.width) // 2, 150), art)
+
+    try:
+        bold = ImageFont.truetype(os.path.join(_FONT_DIR, "DejaVuSans-Bold.ttf"), 68)
+        book = ImageFont.truetype(os.path.join(_FONT_DIR, "DejaVuSans.ttf"), 32)
+    except OSError:
+        bold = book = None          # no DejaVu: ship the artwork without text
+    if bold:
+        draw = ImageDraw.Draw(canvas)
+        for text, font, y, fill in (
+            ("HiveMind", bold, 330, "#f3ebff"),
+            ("What's happening right now, shared by people here.", book, 430, "#c9bfdb"),
+        ):
+            w = draw.textbbox((0, 0), text, font=font)[2]
+            draw.text(((1200 - w) // 2, y), text, font=font, fill=fill)
+    canvas.save(dest, optimize=True)
+
+
+def build_icons() -> list[str]:
+    """Favicon, PWA icons, apple-touch-icon, social preview and the manifest."""
+    import json
+
+    from PIL import Image
+
+    os.makedirs(ICONS, exist_ok=True)
+    written = []
+
+    # The SVG favicon is what modern browsers actually use -- no raster step.
+    svg_dest = os.path.join(ICONS, "favicon.svg")
+    with open(svg_dest, "w") as fh:
+        fh.write(bj.svg_icon("plate"))
+    written.append(svg_dest)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sources = {}
+        for variant in ("plate", "maskable"):
+            src = os.path.join(tmp, f"{variant}.svg")
+            with open(src, "w") as fh:
+                fh.write(bj.svg_icon(variant))
+            sources[variant] = src
+
+        jobs = [(sources[v], os.path.join(ICONS, name), size, size)
+                for v, size, name in ICON_RENDERS]
+        _inkscape(jobs)
+        written.extend(png for _, png, _, _ in jobs)
+
+        # The full-bleed icons are opaque by construction; flatten them to RGB
+        # so no client can misinterpret an alpha channel. iOS in particular
+        # composites alpha onto black, which would halo the artwork.
+        for variant, _size, name in ICON_RENDERS:
+            if variant != "maskable":
+                continue
+            path = os.path.join(ICONS, name)
+            img = Image.open(path)
+            if img.mode != "RGB":
+                Image.alpha_composite(
+                    Image.new("RGBA", img.size, bj.ICON_PLATE_BG), img.convert("RGBA")
+                ).convert("RGB").save(path, optimize=True)
+
+        # One .ico carrying 16/32/48 for /favicon.ico probes and older clients.
+        ico = os.path.join(ICONS, "favicon.ico")
+        Image.open(os.path.join(ICONS, "favicon-48.png")).save(
+            ico, sizes=[(16, 16), (32, 32), (48, 48)])
+        written.append(ico)
+
+        og = os.path.join(ICONS, "og-image.png")
+        _og_image(og, tmp)
+        written.append(og)
+
+    manifest = os.path.join(STATIC, "manifest.json")
+    with open(manifest, "w") as fh:
+        json.dump(MANIFEST, fh, indent=2)
+        fh.write("\n")
+    written.append(manifest)
+    return written
 
 if __name__ == "__main__":
     main()

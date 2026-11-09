@@ -100,5 +100,28 @@ Edit `tools/ui/brainjar.py` — it is the single source for both options — the
 python3 tools/ui/build_assets.py
 ```
 
-`static/ui/topbar-art.html` and `templates/_topbar_art.html` are generated.
-Do not hand-edit them.
+`static/ui/topbar-art.html`, `templates/_topbar_art.html`, `static/ui/icons/`
+and `static/ui/manifest.json` are all generated. Do not hand-edit them.
+
+The icons are committed deliberately: Inkscape is on dev machines but not in
+CI or the container build, which only copies `hivemind/`.
+
+## Icons and manifest
+
+`brainjar.py` draws a separate, simplified jar for icon sizes -- no bubbles,
+gyri, rivets, gradients or filters, and much thicker outlines -- because the
+top-bar artwork composites into a smudge at 16 px. Two variants: `plate`
+(rounded card, for the favicon and the `any` PWA icons) and `maskable` (full
+bleed and opaque, for the `maskable` icons and apple-touch-icon, since iOS
+composites alpha onto black).
+
+Two details here are load-bearing and easy to undo by accident:
+
+- The manifest is `manifest.json`, not `.webmanifest`. Python's `mimetypes`
+  has no entry for `.webmanifest`, so Starlette would serve it as
+  `text/plain` and browsers would reject it.
+- `scope` is set to `/` explicitly. It otherwise defaults to the manifest's
+  own directory, and served from `/static/` that puts `start_url` out of
+  scope and makes the app silently non-installable, with no error anywhere.
+
+`tests/test_avatars_and_icons.py` encodes both.

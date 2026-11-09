@@ -1,5 +1,6 @@
 let csrfToken = null;
 let lastFeedIds = null;
+let avatarBase = "";
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({
@@ -21,16 +22,33 @@ function expires(iso) {
   }).format(new Date(iso));
 }
 
+// Rendered by HiveMind's own RoboHash (k8s/robohash/), so no third party sees
+// the request. The explicit .png keeps the generated hash stable regardless of
+// how the server treats a missing extension. set1 is the classic robot set.
 function avatar(seed) {
-  return `https://robohash.org/${encodeURIComponent(seed)}?set=set4&size=80x80`;
+  return `${avatarBase}/${encodeURIComponent(seed)}.png?set=set1&size=80x80`;
 }
+
+// If the self-hosted instance is unreachable we show a local glyph rather than
+// reaching for the public service: the privacy claim stays true in every case.
+// An HTML error page delivered into an <img> also fails to decode and lands
+// here, so a misrouted request degrades the same way an outage does.
+function avatarFailed(img) {
+  const glyph = document.createElement("div");
+  glyph.className = "avatar-fallback";
+  glyph.textContent = "\u{1F916}";
+  glyph.setAttribute("role", "img");
+  glyph.setAttribute("aria-label", "Robot avatar unavailable");
+  img.replaceWith(glyph);
+}
+window.avatarFailed = avatarFailed;
 
 function render(rows) {
   const feed = $("#feed");
   feed.innerHTML = rows.length ? rows.map((report) => `
     <article class="report">
       <img src="${avatar(report.avatar_seed)}" alt="Robot avatar"
-        onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'avatar-fallback',textContent:'🤖'}))">
+        width="48" height="48" loading="lazy" onerror="avatarFailed(this)">
       <div>
         <p class="meta"><span class="tag ${escapeHtml(report.category)}">${escapeHtml(report.category)}</span> · attendee report</p>
         <p class="content">${escapeHtml(report.content)}</p>
@@ -72,6 +90,7 @@ async function bootstrap() {
   if (!response.ok) throw new Error(data.detail || "Could not start browser session");
   if (data.csrf_token) sessionStorage.setItem("hivemind_csrf", data.csrf_token);
   csrfToken = data.csrf_token || sessionStorage.getItem("hivemind_csrf");
+  avatarBase = (data.avatar_base_url || "").replace(/\/$/, "");
 }
 
 document.addEventListener("DOMContentLoaded", async () => {

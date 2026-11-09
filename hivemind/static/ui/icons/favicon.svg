@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="HiveMind: a brain in a jar"><rect width="64" height="64" rx="8" fill="#1b0f30"/><g transform="translate(11.27 8) scale(0.55)"><g>
+  <path d="M10 70 h56 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-56 a4 4 0 0 1 -4 -4 v-8 a4 4 0 0 1 4 -4 z"
+        fill="#6f5f92"/>
+  <path d="M15 20.0 h46 v40 a6 6 0 0 1 -6 6 h-34 a6 6 0 0 1 -6 -6 z" fill="#2a0f52"/>
+  <g transform="translate(38 40) scale(.8) translate(-38 -40)">
+    <path d="M36.2 51 h3.6 l.7 5.4 a2.3 2.3 0 0 1 -2.3 2.7 h-.4 a2.3 2.3 0 0 1 -2.3 -2.7 z"
+          fill="#c98bf5" stroke="#2a0f52" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M38 23 C33 19.6 25.8 21 23.8 26 C18.6 27.2 16 31.4 18 36 C13.8 38.4 14 45 19 47 C20.2 52 26 54 30 51 C33 53.6 38 53 38 53 Z" fill="#c98bf5" stroke="#2a0f52" stroke-width="1.6" stroke-linejoin="round"/>
+    <g transform="translate(76 0) scale(-1 1)"><path d="M38 23 C33 19.6 25.8 21 23.8 26 C18.6 27.2 16 31.4 18 36 C13.8 38.4 14 45 19 47 C20.2 52 26 54 30 51 C33 53.6 38 53 38 53 Z" fill="#c98bf5" stroke="#2a0f52" stroke-width="1.6" stroke-linejoin="round"/></g>
+  </g>
+  <path d="M15 14 h46 v52 a6 6 0 0 1 -6 6 h-34 a6 6 0 0 1 -6 -6 z" fill="none"
+        stroke="#d9c6ff" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M21 22 v38" stroke="#ffffff" stroke-opacity=".38" stroke-width="3"
+        stroke-linecap="round" fill="none"/>
+  <rect x="11" y="5" width="54" height="11" rx="4" fill="#6f5f92"/>
+</g></g></svg>
