@@ -37,9 +37,17 @@ Write concise opportunity bullets only when they are supported by cited source
 IDs. An attendee report is an observation or planned report, never a confirmed
 official event. Do not infer an event end from a report expiration. Return an
 empty bullets array if the evidence cannot support a useful factual summary."""
+IDEAL_TALK_INSTRUCTIONS = INSTRUCTIONS + """
+The request also includes untrusted attendee interests. Recommend only official
+events that fit those interests. Every recommendation must cite at least one
+official-event source ID. You may cite an attendee report only as context for
+an official recommendation, and must make clear that it is an attendee
+observation, not a confirmed event fact."""
 
 
-def evidence_payload(official: list[dict[str, Any]], reports: list[dict[str, Any]]) -> tuple[dict[str, Any], set[str]]:
+def evidence_payload(
+    official: list[dict[str, Any]], reports: list[dict[str, Any]], interests: str | None = None
+) -> tuple[dict[str, Any], set[str]]:
     items: list[dict[str, Any]] = []
     for event in official:
         items.append(
@@ -59,11 +67,17 @@ def evidence_payload(official: list[dict[str, Any]], reports: list[dict[str, Any
                 "expires_at": str(report["expires_at"]),
             }
         )
-    rendered = json.dumps({"evidence": items}, ensure_ascii=False, separators=(",", ":"))
+    payload: dict[str, Any] = {}
+    if interests is not None:
+        payload["interests"] = interests
+    payload["evidence"] = items
+    rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     # The maximum reservation assumes this approximate token bound plus
-    # instructions and schema. Trim evidence rather than silently exceeding it.
-    if len(rendered) > 36_000:
-        rendered = rendered[:36_000]
+    # instructions and schema. Drop whole evidence entries instead of slicing
+    # JSON, so citations can only name material the model actually received.
+    while len(rendered) > 36_000 and items:
+        items.pop()
+        rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     return {"evidence": rendered}, {item["id"] for item in items}
 
 
@@ -87,11 +101,13 @@ class OpenAISummarizer:
     async def close(self) -> None:
         await self.client.close()
 
-    async def generate(self, official: list[dict[str, Any]], reports: list[dict[str, Any]]) -> tuple[OpportunitySummary, int]:
-        prompt, _ = evidence_payload(official, reports)
+    async def generate(
+        self, official: list[dict[str, Any]], reports: list[dict[str, Any]], interests: str | None = None
+    ) -> tuple[OpportunitySummary, int]:
+        prompt, _ = evidence_payload(official, reports, interests)
         response = await self.client.responses.create(
             model=self.settings.openai_summary_model,
-            instructions=INSTRUCTIONS,
+            instructions=IDEAL_TALK_INSTRUCTIONS if interests is not None else INSTRUCTIONS,
             input=prompt["evidence"],
             max_output_tokens=self.settings.openai_summary_max_output_tokens,
             reasoning={"effort": "none"},

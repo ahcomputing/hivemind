@@ -33,3 +33,14 @@ class ReportInput(BaseModel):
 
 class OpportunitySummaryInput(BaseModel):
     window_minutes: Literal[30, 60, 90, 120] = 30
+    interests: str | None = Field(default=None, max_length=500)
+
+    @field_validator("interests")
+    @classmethod
+    def normalize_interests(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("interests cannot be blank")
+        return value

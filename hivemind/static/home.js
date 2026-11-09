@@ -9,34 +9,60 @@ async function data(response) { try { return await response.json(); } catch { re
 async function bootstrap() { const response=await fetch("/api/session/bootstrap",{method:"POST"}), result=await data(response); if(!response.ok) throw new Error(result.detail || "Could not start browser session"); csrfToken=result.csrf_token; sessionStorage.setItem("hivemind_csrf",csrfToken); }
 function official(row) { return `<article id="${sourceAnchor(`official:${row.id}`)}" class="report"><div><p class="meta">OFFICIAL EVENT</p><p class="content"><a href="${escapeHtml(row.source_url)}" target="_blank" rel="noreferrer">${escapeHtml(row.title)}</a></p><p class="location">${escapeHtml(row.location)} · ${mt(row.starts_at)}–${mt(row.ends_at)}</p>${row.speaker_names?.length ? `<p class="location">${escapeHtml(row.speaker_names.join(", "))}</p>` : ""}</div></article>`; }
 function report(row) { return `<article id="${sourceAnchor(`report:${row.id}`)}" class="report"><div><p class="meta">${row.starts_at && new Date(row.starts_at)>new Date() ? "SCHEDULED REPORT" : "ATTENDEE OBSERVATION"}</p><p class="content">${escapeHtml(row.content)}</p>${row.location ? `<p class="location">📍 ${escapeHtml(row.location)}</p>` : ""}${row.starts_at ? `<p class="location">Starts ${mt(row.starts_at)}</p>` : ""}<p class="expires">Expires ${mt(row.expires_at)}</p></div></article>`; }
-function renderSummary(summary, generatedAt, windowMinutes) {
+function renderSummary(summary, generatedAt, windowMinutes, recommendationMode) {
   const section = $("#generated-summary");
   if (!summary?.bullets?.length) { section.hidden = true; return; }
-  $("#summary-generated-at").textContent = `Generated ${mt(generatedAt)} for the next ${windowMinutes} minutes.`;
+  $("#summary-heading").textContent = recommendationMode ? "Your ideal talks" : "Opportunity brief";
+  $("#summary-generated-at").textContent = recommendationMode
+    ? `Recommendations generated ${mt(generatedAt)} for the next ${windowMinutes} minutes.`
+    : `Generated ${mt(generatedAt)} for the next ${windowMinutes} minutes.`;
   $("#summary-bullets").innerHTML = summary.bullets.map((bullet) => `<li>${escapeHtml(bullet.text)} ${bullet.source_ids.map((id) => `<a href="#${sourceAnchor(id)}">[source]</a>`).join(" ")}</li>`).join("");
   section.hidden = false;
 }
+function supportedRows(rows, kind, summary, recommendationMode) {
+  if (!recommendationMode || !summary?.bullets?.length) return rows;
+  const citations = new Set(summary.bullets.flatMap((bullet) => bullet.source_ids));
+  return rows.filter((row) => citations.has(`${kind}:${row.id}`));
+}
+function renderOpportunities(result) {
+  const recommendationMode = result.recommendation_mode === true;
+  const officialEvents = supportedRows(result.official_events, "official", result.summary, recommendationMode);
+  const attendeeReports = supportedRows(result.attendee_reports, "report", result.summary, recommendationMode);
+  $("#opportunities").hidden=false;
+  $("#official-events").innerHTML=officialEvents.length ? officialEvents.map(official).join("") : '<p class="empty">No official events match this window.</p>';
+  $("#attendee-reports").innerHTML=attendeeReports.length ? attendeeReports.map(report).join("") : '<p class="empty">No relevant attendee observations were cited.</p>';
+  $("#freshness").textContent=result.schedule_freshness ? `Official schedule refreshed ${mt(result.schedule_freshness)}.` : "Official schedule has not been imported yet.";
+  $("#selection-note").hidden=!result.selection_limited;
+  renderSummary(result.summary, result.generated_at, result.window_minutes, recommendationMode);
+}
 document.addEventListener("DOMContentLoaded", async () => {
-  const button=$("#summarize"), windowSelect=$("#window"), status=$("#summary-status");
-  try { await bootstrap(); } catch (error) { status.textContent=error.message; button.disabled=true; }
-  windowSelect.addEventListener("change", () => { button.textContent=`Summarize opportunities in the next ${windowSelect.value} minutes`; });
-  button.addEventListener("click", async () => {
-    button.disabled=true; status.textContent="Finding current opportunities…"; window.HiveMindTopBar?.setState("active");
+  const button=$("#summarize"), windowSelect=$("#window"), status=$("#summary-status"), findButton=$("#find-ideal-talk"), form=$("#ideal-talk-form"), interests=$("#interests"), recommend=$("#recommend");
+  async function load(interestsValue=null) {
+    const recommendationMode=interestsValue !== null;
+    button.disabled=true; findButton.disabled=true; recommend.disabled=true;
+    status.textContent=recommendationMode ? "Finding talks that fit your interests…" : "Finding current opportunities…";
+    window.HiveMindTopBar?.setState("active");
     try {
-      const response=await fetch("/api/opportunities/summary", {method:"POST", headers:{"Content-Type":"application/json","X-CSRF-Token":csrfToken||""}, body:JSON.stringify({window_minutes:Number(windowSelect.value)})}), result=await data(response);
+      const body={window_minutes:Number(windowSelect.value)};
+      if (recommendationMode) body.interests=interestsValue;
+      const response=await fetch("/api/opportunities/summary", {method:"POST", headers:{"Content-Type":"application/json","X-CSRF-Token":csrfToken||""}, body:JSON.stringify(body)}), result=await data(response);
       if(!response.ok) { status.textContent=result.detail||"Could not load opportunities."; return; }
-      $("#opportunities").hidden=false;
-      $("#official-events").innerHTML=result.official_events.length ? result.official_events.map(official).join("") : '<p class="empty">No official events overlap this window.</p>';
-      $("#attendee-reports").innerHTML=result.attendee_reports.length ? result.attendee_reports.map(report).join("") : '<p class="empty">No active attendee opportunities overlap this window.</p>';
-      $("#freshness").textContent=result.schedule_freshness ? `Official schedule refreshed ${mt(result.schedule_freshness)}.` : "Official schedule has not been imported yet.";
-      $("#selection-note").hidden=!result.selection_limited;
-      renderSummary(result.summary, result.generated_at, result.window_minutes);
-      status.textContent=result.generation_message || (result.generation_status === "cached" ? "Cached opportunity brief loaded." : "Opportunities loaded.");
+      renderOpportunities(result);
+      status.textContent=result.generation_message || (result.generation_status === "cached" ? "Cached recommendations loaded." : recommendationMode ? "Recommendations loaded." : "Opportunities loaded.");
     } catch {
       status.textContent="Could not load opportunities. Check your connection and try again.";
     } finally {
-      button.disabled=false;
+      button.disabled=false; findButton.disabled=false; recommend.disabled=false;
       window.HiveMindTopBar?.setState("idle");
     }
+  }
+  try { await bootstrap(); } catch (error) { status.textContent=error.message; button.disabled=true; findButton.disabled=true; recommend.disabled=true; }
+  windowSelect.addEventListener("change", () => { button.textContent=`Summarize opportunities in the next ${windowSelect.value} minutes`; });
+  button.addEventListener("click", () => load());
+  findButton.addEventListener("click", () => {
+    form.hidden=false;
+    findButton.setAttribute("aria-expanded", "true");
+    interests.focus();
   });
+  form.addEventListener("submit", (event) => { event.preventDefault(); load(interests.value.trim()); });
 });

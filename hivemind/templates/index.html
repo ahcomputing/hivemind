@@ -1,7 +1,20 @@
 {% extends "base.html" %}{% block title %}HiveMind — opportunities{% endblock %}{% block content %}
 <header><div><p class="eyebrow">ATTENDEE SIGNAL</p><h1>Opportunities nearby</h1><p class="subtitle">Official schedule details and attendee observations, kept separate.</p></div></header>
-<section class="notice" aria-label="Privacy notice">Each browser has only a robot avatar. Summary requests send public schedule and report text only—never your browser credentials or avatar seed.</section>
-<section class="card briefing" aria-labelledby="briefing-heading"><h2 id="briefing-heading">What can I catch next?</h2><label for="window">Time window</label><select id="window"><option value="30" selected>Next 30 minutes</option><option value="60">Next 60 minutes</option><option value="90">Next 90 minutes</option><option value="120">Next 120 minutes</option></select><button id="summarize" type="button">Summarize opportunities in the next 30 minutes</button><p id="summary-status" role="status" aria-live="polite"></p></section>
+<section class="notice" aria-label="Privacy notice">Each browser has only a robot avatar. Summary requests send public schedule, report text, and any interests you enter—never browser credentials or an avatar seed.</section>
+<section class="card briefing" aria-labelledby="briefing-heading">
+  <h2 id="briefing-heading">What can I catch next?</h2>
+  <label for="window">Time window</label>
+  <select id="window"><option value="30" selected>Next 30 minutes</option><option value="60">Next 60 minutes</option><option value="90">Next 90 minutes</option><option value="120">Next 120 minutes</option></select>
+  <button id="summarize" type="button">Summarize opportunities in the next 30 minutes</button>
+  <button id="find-ideal-talk" type="button" aria-controls="ideal-talk-form" aria-expanded="false">Find my ideal talk</button>
+  <form id="ideal-talk-form" class="interest-form" hidden>
+    <label for="interests">What are you interested in?</label>
+    <textarea id="interests" maxlength="500" placeholder="For example: platform engineering, Kubernetes security, and observability" required></textarea>
+    <p class="muted">Recommendations cite official events. Attendee reports are labeled as observations.</p>
+    <button id="recommend" type="submit">Find talks for me</button>
+  </form>
+  <p id="summary-status" role="status" aria-live="polite"></p>
+</section>
 <section id="opportunities" hidden><p id="freshness" class="muted"></p><p id="selection-note" class="muted" hidden>Showing a bounded selection of currently eligible evidence.</p><section id="generated-summary" class="card" hidden aria-labelledby="summary-heading"><h2 id="summary-heading">Opportunity brief</h2><p id="summary-generated-at" class="muted"></p><ul id="summary-bullets"></ul></section><section aria-labelledby="official-heading"><h2 id="official-heading">Official events</h2><div id="official-events" class="feed"></div></section><section aria-labelledby="attendee-heading"><h2 id="attendee-heading">Attendee opportunities</h2><div id="attendee-reports" class="feed"></div></section></section>
 <footer><p class="credit">Robot avatars by <a href="https://robohash.org">RoboHash</a> (MIT), self-hosted. Classic robot set by Zikri Kader, <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.</p>Attendee reports are observations, not verified information. Official schedule imports are operator-triggered and show their last refresh time.</footer>
 {% endblock %}{% block scripts %}<script src="/static/home.js?v=opportunities-2" defer></script>{% endblock %}

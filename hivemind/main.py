@@ -93,22 +93,28 @@ def get_repository(request: Request) -> ElasticsearchRepository:
     return request.app.state.repository
 
 
-def evidence_key(official: list[dict], reports: list[dict], window_minutes: int) -> tuple[str, str]:
+def evidence_key(
+    official: list[dict], reports: list[dict], window_minutes: int, interests: str | None = None
+) -> tuple[str, str]:
     # A content address makes a cache entry invalid as soon as an active report,
     # source snapshot, or time-window evidence set changes.
     material = json.dumps(
-        {"window_minutes": window_minutes, "official": official, "reports": reports},
+        {"window_minutes": window_minutes, "official": official, "reports": reports, "interests": interests},
         default=str, sort_keys=True, separators=(",", ":"),
     ).encode()
     digest_value = hashlib.sha256(material).hexdigest()
     return f"summary:{digest_value}", digest_value
 
 
-def validate_summary_sources(summary: OpportunitySummary, official: list[dict], reports: list[dict]) -> None:
+def validate_summary_sources(
+    summary: OpportunitySummary, official: list[dict], reports: list[dict], require_official_source: bool = False
+) -> None:
     _, eligible = evidence_payload(official, reports)
     for bullet in summary.bullets:
         if not bullet.text.strip() or not bullet.source_ids or not set(bullet.source_ids).issubset(eligible):
             raise SummaryUnavailable("summary had an unsupported citation")
+        if require_official_source and not any(source.startswith("official:") for source in bullet.source_ids):
+            raise SummaryUnavailable("recommendation had no official-event citation")
 
 
 async def current_opportunity_evidence(
@@ -378,6 +384,7 @@ def create_app(
         official, reports, freshness = await current_opportunity_evidence(repository, now, payload.window_minutes)
         response = {
             "window_minutes": payload.window_minutes,
+            "recommendation_mode": payload.interests is not None,
             "generated_at": now,
             "schedule_freshness": freshness["fetched_at"] if freshness else None,
             "official_events": official,
@@ -390,12 +397,12 @@ def create_app(
             response["generation_status"] = "unavailable"
             response["generation_message"] = "AI summaries are not enabled. Source cards are shown instead."
             return response
-        cache_id, evidence_hash = evidence_key(official, reports, payload.window_minutes)
+        cache_id, evidence_hash = evidence_key(official, reports, payload.window_minutes, payload.interests)
         cached = await repository.get_opportunity_cache(cache_id, now)
         if cached:
             try:
                 summary = OpportunitySummary.model_validate(cached["summary"])
-                validate_summary_sources(summary, official, reports)
+                validate_summary_sources(summary, official, reports, payload.interests is not None)
             except Exception:
                 cached = None
             else:
@@ -419,7 +426,7 @@ def create_app(
                 if cached:
                     try:
                         summary = OpportunitySummary.model_validate(cached["summary"])
-                        validate_summary_sources(summary, official, reports)
+                        validate_summary_sources(summary, official, reports, payload.interests is not None)
                     except Exception:
                         break
                     response["summary"] = summary.model_dump()
@@ -457,7 +464,7 @@ def create_app(
             return response
 
         try:
-            summary, actual = await request.app.state.summarizer.generate(official, reports)
+            summary, actual = await request.app.state.summarizer.generate(official, reports, payload.interests)
         except Exception as error:
             # Do not release an uncertain reservation: a timeout can mean the
             # provider accepted and billed the request even though we did not
@@ -472,7 +479,7 @@ def create_app(
             final_official, final_reports, final_freshness = await current_opportunity_evidence(
                 repository, final_now, payload.window_minutes
             )
-            validate_summary_sources(summary, final_official, final_reports)
+            validate_summary_sources(summary, final_official, final_reports, payload.interests is not None)
             await repository.complete_opportunity_generation(
                 cache_id, evidence_hash, payload.window_minutes, summary.model_dump(), final_now
             )
