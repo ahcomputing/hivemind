@@ -22,15 +22,20 @@ document.addEventListener("DOMContentLoaded", async () => {
   windowSelect.addEventListener("change", () => { button.textContent=`Summarize opportunities in the next ${windowSelect.value} minutes`; });
   button.addEventListener("click", async () => {
     button.disabled=true; status.textContent="Finding current opportunities…"; window.HiveMindTopBar?.setState("active");
-    const response=await fetch("/api/opportunities/summary", {method:"POST", headers:{"Content-Type":"application/json","X-CSRF-Token":csrfToken||""}, body:JSON.stringify({window_minutes:Number(windowSelect.value)})}), result=await data(response);
-    button.disabled=false; window.HiveMindTopBar?.setState("idle");
-    if(!response.ok) { status.textContent=result.detail||"Could not load opportunities."; return; }
-    $("#opportunities").hidden=false;
-    $("#official-events").innerHTML=result.official_events.length ? result.official_events.map(official).join("") : '<p class="empty">No official events overlap this window.</p>';
-    $("#attendee-reports").innerHTML=result.attendee_reports.length ? result.attendee_reports.map(report).join("") : '<p class="empty">No active attendee opportunities overlap this window.</p>';
-    $("#freshness").textContent=result.schedule_freshness ? `Official schedule refreshed ${mt(result.schedule_freshness)}.` : "Official schedule has not been imported yet.";
-    $("#selection-note").hidden=!result.selection_limited;
-    renderSummary(result.summary, result.generated_at, result.window_minutes);
-    status.textContent=result.generation_message || (result.generation_status === "cached" ? "Cached opportunity brief loaded." : "Opportunities loaded.");
+    try {
+      const response=await fetch("/api/opportunities/summary", {method:"POST", headers:{"Content-Type":"application/json","X-CSRF-Token":csrfToken||""}, body:JSON.stringify({window_minutes:Number(windowSelect.value)})}), result=await data(response);
+      if(!response.ok) { status.textContent=result.detail||"Could not load opportunities."; return; }
+      $("#opportunities").hidden=false;
+      $("#official-events").innerHTML=result.official_events.length ? result.official_events.map(official).join("") : '<p class="empty">No official events overlap this window.</p>';
+      $("#attendee-reports").innerHTML=result.attendee_reports.length ? result.attendee_reports.map(report).join("") : '<p class="empty">No active attendee opportunities overlap this window.</p>';
+      $("#freshness").textContent=result.schedule_freshness ? `Official schedule refreshed ${mt(result.schedule_freshness)}.` : "Official schedule has not been imported yet.";
+      $("#selection-note").hidden=!result.selection_limited;
+      renderSummary(result.summary, result.generated_at, result.window_minutes);
+      status.textContent=result.generation_message || (result.generation_status === "cached" ? "Cached opportunity brief loaded." : "Opportunities loaded.");
+    } catch {
+      status.textContent="Could not load opportunities.";
+    } finally {
+      button.disabled=false; window.HiveMindTopBar?.setState("idle");
+    }
   });
 });
