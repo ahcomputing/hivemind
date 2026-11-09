@@ -35,6 +35,8 @@ def test_home_renders(client):
     assert 'class="hm-topbar"' in response.text
     assert "/static/ui/topbar.css" in response.text
     assert "/static/ui/topbar.js" in response.text
+    assert "Each browser is represented only by a random robot avatar." in response.text
+    assert "random browser identity" not in response.text
 
 
 def test_validation_and_past_custom_expiration(client):
