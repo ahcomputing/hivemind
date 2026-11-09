@@ -6,7 +6,7 @@ HiveMind is an attendee-powered, mobile-first conference signal board. This firs
 
 - A purple, keyboard-accessible report form and polling feed (15 seconds) with a Coffee filter.
 - Reports of up to 500 characters, optional location and category, and 15-minute, one-hour, end-of-day, or future custom expiry. Storage is UTC; the browser displays America/Denver time.
-- Pseudonymous per-browser identity: an HttpOnly session cookie contains a random identifier plus secret; only SHA-256 hashes of secrets live in Elasticsearch. A separate public random avatar seed is sent to RoboHash. Failed avatar images fall back to a local robot glyph.
+- Avatar-only reporter identity: no username, handle, or display name is created. An HttpOnly session cookie contains a private random identifier plus secret; only SHA-256 hashes of secrets live in Elasticsearch. A separate public random avatar seed is sent to RoboHash. Failed avatar images fall back to a local robot glyph.
 - CSRF checks, ownership checks, server-side validation, escaped client rendering, query-time active/expiration filtering, and a persistent per-session anonymous write limit.
 - Optional Dash0-compatible OpenTelemetry tracing, shipped disabled. It uses the standard OTLP/HTTP exporter, so no Dash0 SDK is coupled into the request path.
 - Elasticsearch is the only primary application store. The mapped indices are `hivemind_sessions` and `hivemind_reports` by default; set `ELASTICSEARCH_INDEX_PREFIX` to isolate an environment.
@@ -73,7 +73,7 @@ GitHub Actions runs Ruff and pytest, then publishes only an immutable `ghcr.io/a
 
 ## Privacy, security, and limitations
 
-RoboHash is a third-party request made by the browser using only the public avatar seed. It does not receive session IDs, session secrets, IP addresses from the app, or report text; a network observer at RoboHash still receives the browser request. Clearing browser data loses the pseudonymous identity. Robots are attribution, not accounts or proof of a unique person.
+RoboHash is a third-party request made by the browser using only the public avatar seed. It does not receive session IDs, session secrets, IP addresses from the app, or report text; a network observer at RoboHash still receives the browser request. Clearing browser data gives that browser a new robot. Robots are the only public attribution, not accounts or proof of a unique person.
 
 This release has no login, author edits, moderator UI, flags, questions/replies, official content import, search UI, provenance, backup automation, high availability, or accessibility certification. Elasticsearch is single-node and therefore not highly available. Longhorn protects the volume, not service availability. Mobile layout and keyboard controls are implemented and covered by source-level checks, but a real phone-on-cellular test remains a public-launch gate.
 
