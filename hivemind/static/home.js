@@ -33,9 +33,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderSummary(result.summary, result.generated_at, result.window_minutes);
       status.textContent=result.generation_message || (result.generation_status === "cached" ? "Cached opportunity brief loaded." : "Opportunities loaded.");
     } catch {
-      status.textContent="Could not load opportunities.";
+      status.textContent="Could not load opportunities. Check your connection and try again.";
     } finally {
-      button.disabled=false; window.HiveMindTopBar?.setState("idle");
+      button.disabled=false;
+      window.HiveMindTopBar?.setState("idle");
     }
   });
 });

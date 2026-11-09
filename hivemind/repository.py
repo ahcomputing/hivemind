@@ -9,9 +9,11 @@ from .config import Settings
 logger = logging.getLogger(__name__)
 
 
-def _as_dt(value: datetime | str) -> datetime:
-    return value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-
+def as_datetime(value: datetime | str) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return result if result.tzinfo else result.replace(tzinfo=UTC)
 
 SESSION_MAPPING = {
     "dynamic": "strict",
@@ -143,6 +145,7 @@ class ElasticsearchRepository:
             index=self.settings.sessions_index,
             id=session_id,
             refresh="wait_for",
+            retry_on_conflict=10,
             script={
                 "lang": "painless",
                 "source": """
@@ -287,7 +290,7 @@ class ElasticsearchRepository:
         except NotFoundError:
             return None
         document = found["_source"]
-        if document.get("state") != "complete" or _as_dt(document["expires_at"]) <= now:
+        if document.get("state") != "complete" or as_datetime(document["expires_at"]) <= now:
             return None
         return document
 
@@ -310,7 +313,7 @@ class ElasticsearchRepository:
         except NotFoundError:
             return False
         source = existing["_source"]
-        if source.get("state") == "generating" and _as_dt(source["lock_expires_at"]) <= now:
+        if source.get("state") == "generating" and as_datetime(source["lock_expires_at"]) <= now:
             try:
                 await self.client.index(
                     index=self.settings.opportunity_cache_index,
@@ -373,6 +376,7 @@ class ElasticsearchRepository:
             index=self.settings.usage_index,
             id=f"openai:{month}",
             refresh="wait_for",
+            retry_on_conflict=10,
             script={
                 "lang": "painless",
                 "source": """

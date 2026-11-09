@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 MOUNTAIN = ZoneInfo("America/Denver")
 COOKIE_NAME = "hivemind_session"
 CSRF_COOKIE_NAME = "hivemind_csrf"
+START_PAST_TOLERANCE = timedelta(minutes=5)
+START_FUTURE_LIMIT = timedelta(days=7)
 
 
 def public_report(report: dict) -> dict:
@@ -53,7 +55,12 @@ def as_utc(value: datetime, default_timezone: ZoneInfo = MOUNTAIN) -> datetime:
 
 
 def start_for(payload: ReportInput, now: datetime) -> datetime:
-    return as_utc(payload.starts_at) if payload.starts_at else now
+    start = as_utc(payload.starts_at) if payload.starts_at else now
+    if start < now - START_PAST_TOLERANCE:
+        raise HTTPException(422, "report start cannot be more than five minutes in the past")
+    if start > now + START_FUTURE_LIMIT:
+        raise HTTPException(422, "report start cannot be more than seven days in the future")
+    return start
 
 
 def expiry_for(payload: ReportInput, now: datetime) -> datetime:
@@ -317,6 +324,9 @@ def create_app(
                 response["generation_status"] = "cached"
                 return response
 
+        # Keep the cross-replica lock beyond the request timeout so the
+        # accounting round trips and final evidence revalidation cannot open a
+        # second paid request for the same evidence at the timeout boundary.
         lock_expires_at = now + timedelta(seconds=runtime_settings.openai_summary_timeout_seconds + 15)
         claimed = await repository.claim_opportunity_generation(
             cache_id, evidence_hash, payload.window_minutes, now, lock_expires_at
