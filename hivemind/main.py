@@ -1,3 +1,6 @@
+import asyncio
+import hashlib
+import json
 import logging
 import secrets
 import uuid
@@ -14,6 +17,13 @@ from .config import Settings, get_settings
 from .models import OpportunitySummaryInput, ReportInput
 from .repository import ElasticsearchRepository
 from .security import digest, token, verify
+from .summaries import (
+    OpenAISummarizer,
+    OpportunitySummary,
+    SummaryUnavailable,
+    estimate_microusd,
+    evidence_payload,
+)
 
 logger = logging.getLogger(__name__)
 MOUNTAIN = ZoneInfo("America/Denver")
@@ -67,6 +77,33 @@ def get_repository(request: Request) -> ElasticsearchRepository:
     return request.app.state.repository
 
 
+def evidence_key(official: list[dict], reports: list[dict], window_minutes: int) -> tuple[str, str]:
+    # A content address makes a cache entry invalid as soon as an active report,
+    # source snapshot, or time-window evidence set changes.
+    material = json.dumps(
+        {"window_minutes": window_minutes, "official": official, "reports": reports},
+        default=str, sort_keys=True, separators=(",", ":"),
+    ).encode()
+    digest_value = hashlib.sha256(material).hexdigest()
+    return f"summary:{digest_value}", digest_value
+
+
+def validate_summary_sources(summary: OpportunitySummary, official: list[dict], reports: list[dict]) -> None:
+    _, eligible = evidence_payload(official, reports)
+    for bullet in summary.bullets:
+        if not bullet.text.strip() or not bullet.source_ids or not set(bullet.source_ids).issubset(eligible):
+            raise SummaryUnavailable("summary had an unsupported citation")
+
+
+async def current_opportunity_evidence(
+    repository: ElasticsearchRepository, now: datetime, window_minutes: int
+) -> tuple[list[dict], list[dict], dict | None]:
+    window_end = now + timedelta(minutes=window_minutes)
+    official, freshness = await repository.list_official_events_overlapping(now, window_end)
+    reports = await repository.list_reports_for_opportunities(window_end)
+    return official, reports, freshness
+
+
 async def database_or_503(request: Request) -> ElasticsearchRepository:
     repository = get_repository(request)
     if not await repository.ready():
@@ -86,7 +123,7 @@ async def owned_session(request: Request, repository: ElasticsearchRepository) -
 
 
 def create_app(
-    settings: Settings | None = None, repository_factory=ElasticsearchRepository
+    settings: Settings | None = None, repository_factory=ElasticsearchRepository, summarizer_factory=OpenAISummarizer
 ) -> FastAPI:
     settings_override = settings
 
@@ -96,11 +133,14 @@ def create_app(
         app.state.settings = runtime_settings
         repository = repository_factory(runtime_settings)
         app.state.repository = repository
+        app.state.summarizer = summarizer_factory(runtime_settings) if runtime_settings.openai_summary_enabled else None
         try:
             await repository.initialize()
         except Exception:
             logger.warning("Elasticsearch is unavailable at startup; readiness will remain false")
         yield
+        if app.state.summarizer:
+            await app.state.summarizer.close()
         await repository.close()
 
     app = FastAPI(title="HiveMind", lifespan=lifespan)
@@ -173,6 +213,8 @@ def create_app(
                 "created_at": datetime.now(UTC),
                 "rate_window": -1,
                 "rate_count": 0,
+                "summary_rate_window": -1,
+                "summary_rate_count": 0,
             },
         )
         response.set_cookie(
@@ -240,16 +282,13 @@ def create_app(
 
     @app.post("/api/opportunities/summary")
     async def opportunity_summary(payload: OpportunitySummaryInput, request: Request):
-        """Return source cards now; paid synthesis remains an explicit opt-in."""
         repository = await database_or_503(request)
-        _, session = await owned_session(request, repository)
+        session_id, session = await owned_session(request, repository)
         csrf_token = request.headers.get("X-CSRF-Token", "")
         if not csrf_token or not secrets.compare_digest(digest(csrf_token), session["csrf_hash"]):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF validation failed")
         now = datetime.now(UTC)
-        window_end = now + timedelta(minutes=payload.window_minutes)
-        official, freshness = await repository.list_official_events_overlapping(now, window_end)
-        reports = await repository.list_reports_for_opportunities(window_end)
+        official, reports, freshness = await current_opportunity_evidence(repository, now, payload.window_minutes)
         response = {
             "window_minutes": payload.window_minutes,
             "generated_at": now,
@@ -259,13 +298,111 @@ def create_app(
             "selection_limited": len(official) == 40 or len(reports) == 40,
             "summary": None,
         }
-        if not request.app.state.settings.openai_summary_enabled:
+        runtime_settings = request.app.state.settings
+        if not runtime_settings.openai_summary_enabled:
             response["generation_status"] = "unavailable"
             response["generation_message"] = "AI summaries are not enabled. Source cards are shown instead."
             return response
-        # The enabled implementation is introduced only with a reviewed model,
-        # verified current prices, and a durable shared ledger.
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "AI summary service is not configured")
+        cache_id, evidence_hash = evidence_key(official, reports, payload.window_minutes)
+        cached = await repository.get_opportunity_cache(cache_id, now)
+        if cached:
+            try:
+                summary = OpportunitySummary.model_validate(cached["summary"])
+                validate_summary_sources(summary, official, reports)
+            except Exception:
+                cached = None
+            else:
+                response["summary"] = summary.model_dump()
+                response["generation_status"] = "cached"
+                return response
+
+        lock_expires_at = now + timedelta(seconds=runtime_settings.openai_summary_timeout_seconds)
+        claimed = await repository.claim_opportunity_generation(
+            cache_id, evidence_hash, payload.window_minutes, now, lock_expires_at
+        )
+        if not claimed:
+            # Other replicas wait only for their existing single paid request;
+            # this is coalescing, not an automatic paid retry.
+            for _ in range(runtime_settings.openai_summary_timeout_seconds * 4):
+                await asyncio.sleep(0.25)
+                cached = await repository.get_opportunity_cache(cache_id, datetime.now(UTC))
+                if cached:
+                    try:
+                        summary = OpportunitySummary.model_validate(cached["summary"])
+                        validate_summary_sources(summary, official, reports)
+                    except Exception:
+                        break
+                    response["summary"] = summary.model_dump()
+                    response["generation_status"] = "coalesced"
+                    return response
+            response["generation_status"] = "unavailable"
+            response["generation_message"] = "Summary generation is taking longer than expected. Source cards are shown instead."
+            return response
+
+        rate_window = int(now.timestamp() // runtime_settings.summary_rate_limit_seconds)
+        if not await repository.consume_summary_slot(
+            session_id, rate_window, runtime_settings.summary_rate_limit_count
+        ):
+            await repository.abandon_opportunity_generation(cache_id)
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "summary rate limit exceeded; please wait")
+        reservation = estimate_microusd(
+            runtime_settings.openai_summary_max_input_tokens,
+            runtime_settings.openai_summary_max_output_tokens,
+            runtime_settings,
+        )
+        month = now.strftime("%Y-%m")
+        cap_microusd = int(runtime_settings.openai_monthly_cap_usd * 1_000_000)
+        try:
+            reserved = await repository.reserve_openai_budget(month, reservation, cap_microusd, now)
+        except Exception as error:
+            await repository.abandon_opportunity_generation(cache_id)
+            logger.warning("OpenAI accounting unavailable: %s", type(error).__name__)
+            response["generation_status"] = "unavailable"
+            response["generation_message"] = "Summary accounting is unavailable. Source cards are shown instead."
+            return response
+        if not reserved:
+            await repository.abandon_opportunity_generation(cache_id)
+            response["generation_status"] = "budget_exhausted"
+            response["generation_message"] = "The monthly AI summary budget is exhausted. Source cards are shown instead."
+            return response
+
+        try:
+            summary, actual = await request.app.state.summarizer.generate(official, reports)
+        except Exception as error:
+            # Do not release an uncertain reservation: a timeout can mean the
+            # provider accepted and billed the request even though we did not
+            # receive a usable response.
+            logger.warning("OpenAI summary unavailable: %s", type(error).__name__)
+            response["generation_status"] = "unavailable"
+            response["generation_message"] = "AI summary is temporarily unavailable. Source cards are shown instead."
+            return response
+        try:
+            await repository.settle_openai_budget(month, reservation, actual, datetime.now(UTC))
+            final_now = datetime.now(UTC)
+            final_official, final_reports, final_freshness = await current_opportunity_evidence(
+                repository, final_now, payload.window_minutes
+            )
+            validate_summary_sources(summary, final_official, final_reports)
+            await repository.complete_opportunity_generation(
+                cache_id, evidence_hash, payload.window_minutes, summary.model_dump(), final_now
+            )
+        except Exception as error:
+            logger.warning("OpenAI summary could not be safely published: %s", type(error).__name__)
+            response["generation_status"] = "unavailable"
+            response["generation_message"] = "AI summary could not be safely published. Source cards are shown instead."
+            return response
+        response.update(
+            {
+                "generated_at": final_now,
+                "schedule_freshness": final_freshness["fetched_at"] if final_freshness else None,
+                "official_events": final_official,
+                "attendee_reports": [public_report(report) for report in final_reports],
+                "selection_limited": len(final_official) == 40 or len(final_reports) == 40,
+                "summary": summary.model_dump(),
+                "generation_status": "generated",
+            }
+        )
+        return response
 
     return app
 

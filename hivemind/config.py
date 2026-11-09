@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     openai_input_usd_per_million_tokens: Decimal | None = None
     openai_output_usd_per_million_tokens: Decimal | None = None
     openai_monthly_cap_usd: Decimal = Decimal("50")
+    openai_summary_max_input_tokens: int = 12_000
+    openai_summary_max_output_tokens: int = 600
+    openai_summary_timeout_seconds: int = 30
+    summary_rate_limit_count: int = 3
+    summary_rate_limit_seconds: int = 60
     evolution_enabled: bool = False
     evolution_schedule: str | None = None
     report_rate_limit_count: int = 5
@@ -67,6 +72,10 @@ class Settings(BaseSettings):
                 raise ValueError("verified OpenAI input/output pricing is required")
             if self.openai_monthly_cap_usd != Decimal("50"):
                 raise ValueError("HiveMind's OpenAI monthly cap must be exactly 50 USD")
+            if self.openai_summary_timeout_seconds != 30:
+                raise ValueError("OpenAI summary requests must time out after 30 seconds")
+            if self.openai_summary_max_input_tokens <= 0 or self.openai_summary_max_output_tokens <= 0:
+                raise ValueError("OpenAI summary token limits must be positive")
         return self
 
     @property
