@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hivemind
+  namespace: hivemind
+spec:
+  selector: {app.kubernetes.io/name: hivemind}
+  ports: [{name: http, port: 80, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hivemind
+  namespace: hivemind
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: hivemind}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: hivemind}}
+    spec:
+      # Add the pre-created ghcr-pull-secret here only if the package is private.
+      containers:
+        - name: app
+          image: ghcr.io/ahcomputing/hivemind:REPLACE_WITH_COMMIT_SHA
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: 8080}]
+          env:
+            - {name: APP_ENV, value: production}
+            - {name: COOKIE_SECURE, value: "true"}
+            - {name: ELASTICSEARCH_URL, value: http://elasticsearch:9200}
+            - {name: ELASTICSEARCH_INDEX_PREFIX, value: hivemind}
+            - {name: EVOLUTION_ENABLED, value: "false"}
+            # Dash0 receives only standard request telemetry. Keep this off until
+            # the endpoint and authorization header are supplied out of band.
+            - {name: OTEL_SDK_DISABLED, value: "true"}
+            - {name: OTEL_SERVICE_NAME, value: hivemind}
+            - {name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf}
+            # Set Dash0's OTLP/HTTP base URL during approved promotion.
+            # The standard exporter appends /v1/traces to this base endpoint.
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: CHANGE_ME_DASH0_OTLP_HTTP_BASE_URL}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef: {name: hivemind-secrets, key: OTEL_EXPORTER_OTLP_HEADERS}
+            - name: APP_SECRET
+              valueFrom: {secretKeyRef: {name: hivemind-secrets, key: APP_SECRET}}
+            - name: ELASTICSEARCH_USERNAME
+              valueFrom: {secretKeyRef: {name: hivemind-secrets, key: ELASTICSEARCH_USERNAME}}
+            - name: ELASTICSEARCH_PASSWORD
+              valueFrom: {secretKeyRef: {name: hivemind-secrets, key: ELASTICSEARCH_PASSWORD}}
+            - name: ADMIN_USERNAME
+              valueFrom: {secretKeyRef: {name: hivemind-secrets, key: ADMIN_USERNAME}}
+            - name: ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: hivemind-secrets, key: ADMIN_PASSWORD}}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          startupProbe: {httpGet: {path: /healthz, port: http}, failureThreshold: 30, periodSeconds: 5}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}

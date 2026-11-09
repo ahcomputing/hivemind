@@ -1,0 +1,244 @@
+/* HiveMind top bar — brain in a jar, circuit board, menu.
+   Option A: one inline SVG, animated here. Theme follows app.css custom
+   properties where they exist, with fallbacks so this file stands alone. */
+
+.hm-topbar {
+  --hm-bar-h: 88px;
+  --hm-focus: var(--focus, #fbca57);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0;
+  height: var(--hm-bar-h);
+  padding: 0 10px 0 0;
+  background: linear-gradient(180deg, #1b0f30 0%, #150b26 70%, #110820 100%);
+  border-bottom: 1px solid var(--line, #5b3a88);
+  box-shadow: 0 10px 30px -22px #000;
+}
+
+.hm-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.hm-jar-svg { display: block; width: 76px; height: var(--hm-bar-h); flex: none; }
+.hm-board-svg { display: block; width: 100%; height: var(--hm-bar-h); min-width: 0; }
+
+/* The brand reads off the board's own silkscreen, so the heading is
+   visually hidden by default. Add .hm-topbar--wordmark to the bar to show a
+   text wordmark in its own column between the jar and the board instead. */
+.hm-wordmark {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.hm-topbar--wordmark { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+.hm-topbar--wordmark .hm-wordmark {
+  position: static;
+  width: auto; height: auto;
+  margin: 0 12px 0 2px;
+  overflow: visible;
+  clip-path: none;
+  font: 700 1.02rem/1 ui-rounded, system-ui, sans-serif;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #efe3ff;
+  text-shadow: 0 0 14px #8b4fea88, 0 1px 0 #1a0d2e;
+}
+
+/* ---------------------------------------------------------------- bubbles */
+.hm-b {
+  animation: hm-bubble var(--p) linear infinite;
+  animation-delay: var(--d);
+  will-change: transform, opacity;
+}
+.hm-b-active { display: none; }
+.hm-topbar[data-state="active"] .hm-b-active { display: block; }
+.hm-topbar[data-state="active"] .hm-b { animation-duration: calc(var(--p) / 2.1); }
+
+@keyframes hm-bubble {
+  0%   { transform: translate(0, 0);                        opacity: 0; }
+  8%   {                                                    opacity: .85; }
+  25%  { transform: translate(var(--sway), -11.5px); }
+  50%  { transform: translate(0, -23px); }
+  75%  { transform: translate(calc(var(--sway) * -1), -34.5px); }
+  82%  {                                                    opacity: .85; }
+  100% { transform: translate(0, -46px);                    opacity: 0; }
+}
+
+/* ------------------------------------------------------------------ brain */
+.hm-brain-pulse {
+  transform-box: view-box;
+  transform-origin: 38px 40px;
+  transform: scale(.88);
+  animation: hm-brain-idle 5.2s ease-in-out infinite;
+}
+.hm-topbar[data-state="active"] .hm-brain-pulse {
+  animation: hm-brain-active 1.15s ease-in-out infinite;
+}
+@keyframes hm-brain-idle   { 0%, 100% { transform: scale(.88);  } 50% { transform: scale(.887); } }
+@keyframes hm-brain-active { 0%, 100% { transform: scale(.88);  } 50% { transform: scale(.911); } }
+
+.hm-halo { opacity: .18; animation: hm-halo-idle 5.2s ease-in-out infinite; }
+.hm-topbar[data-state="active"] .hm-halo { animation: hm-halo-active 1.15s ease-in-out infinite; }
+@keyframes hm-halo-idle   { 0%, 100% { opacity: .16; } 50% { opacity: .30; } }
+@keyframes hm-halo-active { 0%, 100% { opacity: .34; } 50% { opacity: .95; } }
+
+/* ------------------------------------------------------------ electricity */
+.hm-board-glow { opacity: .07; transition: opacity .45s ease; }
+.hm-topbar[data-state="active"] .hm-board-glow {
+  opacity: .28;
+  animation: hm-board-glow 1.15s ease-in-out infinite;
+}
+@keyframes hm-board-glow { 0%, 100% { opacity: .18; } 50% { opacity: .36; } }
+
+.hm-spark {
+  stroke-width: 1.4;
+  stroke-dashoffset: 0;
+  opacity: 0;
+  animation: hm-spark-rare var(--p) linear infinite;
+  animation-delay: var(--d);
+  will-change: stroke-dashoffset, opacity;
+}
+.hm-topbar[data-state="active"] .hm-spark {
+  stroke-width: 1.7;
+  animation: hm-spark-run var(--pa) linear infinite;
+}
+/* Idle: the dash runs for the first 42% of the cycle, then the trace is dark. */
+@keyframes hm-spark-rare {
+  0%     { stroke-dashoffset: 0;    opacity: .75; }
+  41.9%  { stroke-dashoffset: -116; opacity: .75; }
+  42%    { stroke-dashoffset: -116; opacity: 0; }
+  100%   { stroke-dashoffset: -116; opacity: 0; }
+}
+@keyframes hm-spark-run {
+  from { stroke-dashoffset: 0;    opacity: 1; }
+  to   { stroke-dashoffset: -116; opacity: 1; }
+}
+
+.hm-cable-spark {
+  stroke-width: var(--w);
+  opacity: 0;
+  animation: hm-cable-rare var(--p) linear infinite;
+  animation-delay: var(--d);
+}
+.hm-topbar[data-state="active"] .hm-cable-spark {
+  animation: hm-cable-run var(--pa) linear infinite;
+}
+@keyframes hm-cable-rare {
+  0%     { stroke-dashoffset: 0;    opacity: .7; }
+  29.9%  { stroke-dashoffset: -122; opacity: .7; }
+  30%    { stroke-dashoffset: -122; opacity: 0; }
+  100%   { stroke-dashoffset: -122; opacity: 0; }
+}
+@keyframes hm-cable-run {
+  from { stroke-dashoffset: 0;    opacity: .95; }
+  to   { stroke-dashoffset: -122; opacity: .95; }
+}
+
+/* --------------------------------------------------------------- menu ---- */
+.hm-menu-wrap { position: relative; justify-self: end; }
+
+.hm-menu-button {
+  display: grid;
+  place-items: center;
+  gap: 0;
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 1px solid var(--line, #5b3a88);
+  border-radius: 12px;
+  background: #1d1032;
+  color: #efe3ff;
+  cursor: pointer;
+}
+.hm-menu-button:hover { background: #2a1748; }
+.hm-menu-button .hm-bars { display: grid; gap: 4px; width: 20px; }
+.hm-menu-button .hm-bars i {
+  display: block;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  transition: transform .2s ease, opacity .2s ease;
+}
+.hm-menu-button[aria-expanded="true"] .hm-bars i:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.hm-menu-button[aria-expanded="true"] .hm-bars i:nth-child(2) { opacity: 0; }
+.hm-menu-button[aria-expanded="true"] .hm-bars i:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+.hm-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 232px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: #221239;
+  border: 1px solid var(--line, #5b3a88);
+  border-radius: 14px;
+  box-shadow: 0 24px 48px -24px #000;
+}
+.hm-menu[hidden] { display: none; }
+.hm-menu li { margin: 0; }
+.hm-menu button,
+.hm-menu a {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: #f3ebff;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.hm-menu button:hover,
+.hm-menu a:hover { background: #33205a; }
+.hm-menu .hm-menu-note {
+  padding: 8px 12px 4px;
+  color: var(--muted, #c9bfdb);
+  font-size: .78rem;
+}
+.hm-menu hr { margin: 6px 4px; border: 0; border-top: 1px solid #40296b; }
+
+.hm-topbar :focus-visible { outline: 3px solid var(--hm-focus); outline-offset: 2px; }
+
+/* ------------------------------------------------------- motion opt-outs - */
+/* Honour the OS setting, and the in-app toggle, by freezing every loop at
+   its first frame rather than hiding the art. */
+@media (prefers-reduced-motion: reduce) {
+  .hm-topbar:not(.hm-motion-on) :where(.hm-b, .hm-spark, .hm-cable-spark, .hm-brain-pulse, .hm-halo, .hm-board-glow) {
+    animation: none !important;
+  }
+  .hm-topbar:not(.hm-motion-on) .hm-spark,
+  .hm-topbar:not(.hm-motion-on) .hm-cable-spark { opacity: .55; stroke-dashoffset: -58; }
+  .hm-menu-button .hm-bars i { transition: none; }
+}
+.hm-topbar.hm-still :where(.hm-b, .hm-spark, .hm-cable-spark, .hm-brain-pulse, .hm-halo, .hm-board-glow) {
+  animation: none !important;
+}
+.hm-topbar.hm-still .hm-spark,
+.hm-topbar.hm-still .hm-cable-spark { opacity: .55; stroke-dashoffset: -58; }
+
+@media (max-width: 420px) {
+  .hm-topbar { --hm-bar-h: 72px; }
+  .hm-topbar--wordmark .hm-wordmark { font-size: .9rem; letter-spacing: .08em; }
+  .hm-jar-svg { width: 62px; }
+}
+
+.hm-visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -1,0 +1,37 @@
+[project]
+name = "hivemind"
+version = "0.1.0"
+description = "Attendee-powered conference intelligence, starting with shared expiring reports."
+requires-python = ">=3.12"
+dependencies = [
+  "elasticsearch[async]>=8.17,<9",
+  "fastapi>=0.115,<1",
+  "jinja2>=3.1,<4",
+  "opentelemetry-distro>=0.59b0,<1",
+  "opentelemetry-exporter-otlp-proto-http>=1.38,<2",
+  "opentelemetry-instrumentation-fastapi>=0.59b0,<1",
+  "pydantic-settings>=2.6,<3",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28,<1",
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.25,<1",
+  "ruff>=0.8,<1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["integration: requires a real Elasticsearch instance"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]

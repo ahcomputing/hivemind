@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HiveMind top bar — playground</title>
+<link rel="stylesheet" href="/static/ui/topbar.css">
+<style>
+  :root { color-scheme: dark; --muted:#c9bfdb; --line:#5b3a88; --focus:#fbca57; }
+  body { margin:0; background:radial-gradient(circle at 85% 0,#492579 0,transparent 32rem),#12091f;
+         color:#fbf8ff; font:16px/1.5 system-ui,sans-serif; }
+  .page { width:min(100%,900px); margin:auto; padding:24px 16px 64px; }
+  h1 { font:700 1.6rem/1.2 ui-rounded,system-ui,sans-serif; margin:8px 0 4px; }
+  h2 { font:700 1.1rem/1.2 ui-rounded,system-ui,sans-serif; margin:22px 0 6px; }
+  .lede, .note { color:var(--muted); }
+  .lede { margin:0 0 20px; }
+  .note { font-size:.86rem; margin:8px 0 0; }
+  .controls { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 6px; }
+  .controls button { min-height:44px; padding:9px 14px; border:1px solid var(--line);
+                     border-radius:10px; background:#2a1748; color:#f3ebff; font:inherit;
+                     font-weight:650; cursor:pointer; }
+  .controls button:hover { background:#3a2063; }
+  .controls button[aria-pressed="true"] { background:#a970ff; color:#190b2b; border-color:#a970ff; }
+  .frame { border:1px dashed #4a2f78; border-radius:12px; margin-top:12px; overflow:hidden;
+           resize:horizontal; width:100%; min-width:320px; }
+  .frame > .hm-topbar { position:static; }
+  code { background:#241539; padding:1px 5px; border-radius:5px; font-size:.88em; }
+  ul { padding-left:20px; }
+  li { margin:4px 0; color:var(--muted); }
+  :focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+</style>
+</head>
+<body>
+
+<header class="hm-topbar" data-state="idle" id="bar">
+  <span id="art"></span>
+  <p class="hm-wordmark">HiveMind</p>
+  <span data-hm-status class="hm-visually-hidden" role="status" aria-live="polite">HiveMind is idle</span>
+  <div class="hm-menu-wrap">
+    <button type="button" class="hm-menu-button" aria-expanded="false" aria-controls="menu" aria-label="Menu">
+      <span class="hm-bars" aria-hidden="true"><i></i><i></i><i></i></span>
+    </button>
+    <ul class="hm-menu" id="menu" hidden>
+      <li class="hm-menu-note">Menu items land here as features ship.</li>
+      <li><button type="button" disabled>Schedule</button></li>
+      <li><button type="button" disabled>Questions</button></li>
+      <li><button type="button" disabled>Your robot</button></li>
+      <li><hr></li>
+      <li><button type="button" data-hm-motion aria-pressed="true">Turn off animation</button></li>
+    </ul>
+  </div>
+</header>
+
+<div class="page">
+  <h1>HiveMind top bar</h1>
+  <p class="lede">Inline SVG, animated in CSS. The bar above is the real thing —
+    the same markup <code>templates/_topbar.html</code> renders into the app.</p>
+
+  <h2>States</h2>
+  <div class="controls" role="group" aria-label="Animation state">
+    <button type="button" data-act="idle" aria-pressed="true">Idle</button>
+    <button type="button" data-act="active" aria-pressed="false">Active</button>
+    <button type="button" data-act="pulse">Simulate activity (1.4s)</button>
+    <button type="button" data-act="still" aria-pressed="false">Freeze motion</button>
+    <button type="button" data-act="wordmark" aria-pressed="false">Show text wordmark</button>
+  </div>
+  <p class="note">Idle: soft bubbling, the odd spark crossing a trace.
+    Active: dense bubbling, the brain pulses, charge runs continuously from the
+    board through the cables into the jar's base.</p>
+
+  <h2>Narrow widths</h2>
+  <p class="note">Drag the bottom-right corner to test. The board strip crops
+    from the right; the jar and the menu stay put.</p>
+  <div class="frame" id="frame"></div>
+
+  <h2>Driving it from app code</h2>
+  <p class="note"><code>window.HiveMindTopBar</code> — <code>activity(ms)</code>,
+    <code>setState("idle"|"active")</code>, <code>getState()</code>,
+    <code>setMotion(bool)</code>, <code>getMotion()</code>, <code>init(root)</code>.</p>
+
+  <h2>Accessibility</h2>
+  <ul>
+    <li>The art is <code>aria-hidden</code>; state is announced in words through a
+      <code>role="status"</code> region, never by colour or motion alone.</li>
+    <li><code>prefers-reduced-motion: reduce</code> freezes every loop; the menu
+      toggle overrides the OS setting in either direction and persists.</li>
+    <li>Nothing flashes faster than about 1&nbsp;Hz.</li>
+    <li>Menu: <code>aria-expanded</code>, Escape to close, up/down arrows between
+      items, click-outside to dismiss, 48&nbsp;px target.</li>
+  </ul>
+</div>
+
+<script src="/static/ui/topbar.js" defer></script>
+<script>
+(function () {
+  var bar = document.getElementById("bar");
+
+  // The art is generated; fetch it rather than duplicating it in this page.
+  fetch("/static/ui/topbar-art.html")
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      document.getElementById("art").outerHTML = html;
+      var clone = bar.cloneNode(true);
+      clone.id = "bar-narrow";
+      clone.querySelectorAll("[id]").forEach(function (n) { n.id = n.id + "-n"; });
+      // The clone reuses the first copy's gradients and filters.
+      var dupDefs = clone.querySelector(".hm-defs");
+      if (dupDefs) dupDefs.remove();
+      document.getElementById("frame").appendChild(clone);
+      if (window.HiveMindTopBar) window.HiveMindTopBar.init();
+    });
+
+  function press(value) {
+    document.querySelectorAll("[data-act]").forEach(function (b) {
+      if (b.hasAttribute("aria-pressed")) {
+        b.setAttribute("aria-pressed", b.dataset.act === value ? "true" : "false");
+      }
+    });
+  }
+
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-act]");
+    if (!btn) return;
+    var v = btn.dataset.act;
+    var narrow = document.getElementById("bar-narrow");
+
+    if (v === "wordmark") {
+      var w = !bar.classList.contains("hm-topbar--wordmark");
+      [bar, narrow].forEach(function (n) {
+        if (n) n.classList.toggle("hm-topbar--wordmark", w);
+      });
+      btn.setAttribute("aria-pressed", w ? "true" : "false");
+      return;
+    }
+    if (v === "still") {
+      window.HiveMindTopBar.setMotion(bar.classList.contains("hm-still"));
+      btn.setAttribute("aria-pressed", window.HiveMindTopBar.getMotion() ? "false" : "true");
+      return;
+    }
+    if (v === "pulse") {
+      window.HiveMindTopBar.activity(1400);
+      press("active");
+      setTimeout(function () { press("idle"); }, 1400);
+      return;
+    }
+    window.HiveMindTopBar.setState(v);
+    press(v);
+  });
+})();
+</script>
+</body>
+</html>
