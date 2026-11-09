@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -27,6 +28,25 @@ def test_create_and_list_shared_report(client):
     feed = client.get("/api/reports").json()["reports"]
     assert feed[0]["content"] == "Coffee line is short"
     assert "session_id" not in feed[0]
+
+
+def test_report_log_is_useful_and_excludes_attendee_data(client, caplog):
+    csrf = bootstrap(client)
+    caplog.set_level(logging.INFO)
+    response = post_report(
+        client,
+        csrf,
+        content="private attendee observation",
+        location="Private room 7",
+        category="coffee",
+    )
+    assert response.status_code == 201
+    record = next(record for record in caplog.records if record.msg == "report created")
+    assert record.__dict__["event.name"] == "hivemind.report.created"
+    assert record.__dict__["hivemind.report.category"] == "coffee"
+    assert record.__dict__["hivemind.report.expiration"] == "1h"
+    assert "private attendee observation" not in caplog.text
+    assert "Private room 7" not in caplog.text
 
 
 def test_home_renders(client):
