@@ -83,14 +83,14 @@ if (res.ok) window.HiveMindTopBar.activity(1600);
 
 ## Accessibility
 
-- All art is `aria-hidden`; the state is announced in words through a
-  `role="status"` region ("HiveMind is idle" / "HiveMind is working"), so it
-  never depends on colour or motion alone.
+- The animated art is decorative and hidden from assistive technology; report
+  and form status are announced by their own live regions instead.
 - `prefers-reduced-motion: reduce` freezes every loop, and the menu carries a
   user toggle that overrides the OS setting either way.
 - Nothing flashes faster than about 1 Hz.
-- Menu: `aria-expanded`, `aria-controls`, Escape to close, up/down arrows to
-  move between items, click-outside to dismiss, 48 px touch target.
+- Menu: `aria-expanded`, `aria-controls`, Escape or focus-away to close,
+  up/down arrows to move between items, click-outside to dismiss, 48 px touch
+  target.
 
 ## Changing the art
 

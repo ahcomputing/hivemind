@@ -41,6 +41,7 @@
   function applyMotion() {
     bars.forEach(function (bar) {
       bar.classList.toggle("hm-still", !motion);
+      bar.classList.toggle("hm-motion-on", motion);
       var toggle = bar.querySelector("[data-hm-motion]");
       if (toggle) {
         toggle.setAttribute("aria-pressed", motion ? "true" : "false");
@@ -100,6 +101,7 @@
         close(true);
         return;
       }
+      if (!menu.contains(document.activeElement)) return;
       if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
       var list = items();
       if (!list.length) return;
@@ -133,6 +135,12 @@
 
     button.addEventListener("click", function () {
       if (menu.hidden) { open(); } else { close(true); }
+    });
+
+    bar.querySelector(".hm-menu-wrap").addEventListener("focusout", function (event) {
+      if (event.relatedTarget && !menu.contains(event.relatedTarget) && !button.contains(event.relatedTarget)) {
+        close(false);
+      }
     });
 
     menu.addEventListener("click", function (event) {

@@ -215,11 +215,11 @@
 /* Honour the OS setting, and the in-app toggle, by freezing every loop at
    its first frame rather than hiding the art. */
 @media (prefers-reduced-motion: reduce) {
-  .hm-topbar :where(.hm-b, .hm-spark, .hm-cable-spark, .hm-brain-pulse, .hm-halo, .hm-board-glow) {
+  .hm-topbar:not(.hm-motion-on) :where(.hm-b, .hm-spark, .hm-cable-spark, .hm-brain-pulse, .hm-halo, .hm-board-glow) {
     animation: none !important;
   }
-  .hm-topbar .hm-spark,
-  .hm-topbar .hm-cable-spark { opacity: .55; stroke-dashoffset: -58; }
+  .hm-topbar:not(.hm-motion-on) .hm-spark,
+  .hm-topbar:not(.hm-motion-on) .hm-cable-spark { opacity: .55; stroke-dashoffset: -58; }
   .hm-menu-button .hm-bars i { transition: none; }
 }
 .hm-topbar.hm-still :where(.hm-b, .hm-spark, .hm-cable-spark, .hm-brain-pulse, .hm-halo, .hm-board-glow) {
