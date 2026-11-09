@@ -1,0 +1,1 @@
+"""HiveMind application package."""

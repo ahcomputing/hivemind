@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hivemind
+  namespace: hivemind
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-porkbun
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [hivemind.ahcomputing.com]
+      secretName: hivemind-ahcomputing-tls
+  rules:
+    - host: hivemind.ahcomputing.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: hivemind, port: {name: http}}}

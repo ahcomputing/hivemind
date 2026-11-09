@@ -1,0 +1,47 @@
+# Preflight before apply: verify both nodes have vm.max_map_count >= 262144 and
+# sufficient Longhorn schedulable capacity. This StatefulSet is intentionally single-node.
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: hivemind
+spec:
+  clusterIP: None
+  selector: {app.kubernetes.io/name: hivemind-elasticsearch}
+  ports: [{name: http, port: 9200, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: hivemind
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: hivemind-elasticsearch}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: hivemind-elasticsearch}}
+    spec:
+      securityContext: {fsGroup: 1000}
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+          ports: [{name: http, containerPort: 9200}]
+          env:
+            - {name: discovery.type, value: single-node}
+            - {name: xpack.security.enabled, value: "true"}
+            - {name: ES_JAVA_OPTS, value: -Xms512m -Xmx512m}
+            - name: ELASTIC_PASSWORD
+              valueFrom: {secretKeyRef: {name: hivemind-secrets, key: ELASTICSEARCH_PASSWORD}}
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {cpu: "1", memory: 1500Mi}
+          readinessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 25, periodSeconds: 10}
+          livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 60, periodSeconds: 20}
+          volumeMounts: [{name: data, mountPath: /usr/share/elasticsearch/data}]
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: longhorn
+        resources: {requests: {storage: 10Gi}}
