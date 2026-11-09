@@ -1,15 +1,16 @@
 # HiveMind
 
-HiveMind is an attendee-powered, mobile-first conference signal board. This first vertical slice lets anonymous visitors post short expiring reports and see active reports in other browsers. It is deliberately small and honest: reports are unverified attendee observations, while AI, official schedule ingestion, questions, moderation, and evolution are extension points—not shipped features.
+HiveMind is an attendee-powered, mobile-first conference signal board. Visitors can view a source-first opportunities briefing, share short expiring reports, and see active attendee reports in other browsers. Reports are unverified observations and are always labelled separately from official-event data.
 
 ## What works now
 
-- A purple, keyboard-accessible report form and polling feed (15 seconds) with a Coffee filter.
-- Reports of up to 500 characters, optional location and category, and 15-minute, one-hour, end-of-day, or future custom expiry. Storage is UTC; the browser displays America/Denver time.
+- Three purple, keyboard-accessible pages: the click-only opportunities briefing, Share an update, and the 15-second-polling User reports feed with a Coffee filter.
+- Reports of up to 500 characters, optional location/category/start time, and 15–120-minute, end-of-day, or future custom expiry. Storage is UTC; the browser displays America/Denver time. Relative expiry runs from the selected start time.
+- An operator-run official-event importer for the public Sessionize endpoint, with a separate reviewed Monday hackathon dataset. It validates the complete response before atomically switching the public reader to a new snapshot, retaining the last-good schedule on failure. Run `uv run python scripts/import_official_events.py --include-monday-hackathon`; it never runs automatically.
 - Avatar-only reporter identity: no username, handle, or display name is created. An HttpOnly session cookie contains a private random identifier plus secret; only SHA-256 hashes of secrets live in Elasticsearch. A separate public random avatar seed is sent to HiveMind's own self-hosted RoboHash instance. Failed avatar images fall back to a local robot glyph.
 - CSRF checks, ownership checks, server-side validation, escaped client rendering, query-time active/expiration filtering, and a persistent per-session anonymous write limit.
 - Optional Dash0-compatible OpenTelemetry tracing, shipped disabled. It uses the standard OTLP/HTTP exporter, so no Dash0 SDK is coupled into the request path.
-- Elasticsearch is the only primary application store. The mapped indices are `hivemind_sessions` and `hivemind_reports` by default; set `ELASTICSEARCH_INDEX_PREFIX` to isolate an environment.
+- Elasticsearch is the only primary application store. The mapped indices include `hivemind_sessions`, `hivemind_reports`, and `hivemind_official_events` by default; set `ELASTICSEARCH_INDEX_PREFIX` to isolate an environment.
 
 ## Architecture
 
@@ -51,7 +52,7 @@ After local Compose is healthy, `scripts/verify-elasticsearch-restart.sh` writes
 
 `.env.example` documents every setting. Startup rejects placeholder secrets, a too-short `APP_SECRET`, production without secure cookies or Elasticsearch/admin credentials, and any attempt to enable evolution. No setting values are logged. Kubernetes refers to an out-of-band `hivemind-secrets` Secret; `k8s/secrets.example.yaml` is intentionally unusable.
 
-`OPENAI_API_KEY`, an admin account, and evolution settings are configuration placeholders only. There are no AI calls, OpenAI SDK dependencies, scheduler, or evolution endpoint in this increment. Paid AI remains off until an explicit cap and approval exist.
+`OPENAI_API_KEY`, an admin account, and evolution settings are configuration placeholders only. The opportunities endpoint provides safe source cards while AI is disabled. Paid summaries require `OPENAI_SUMMARY_ENABLED=true`, an explicit model, verified current input/output prices, and the fixed $50 UTC-month cap; startup rejects an incomplete or altered paid configuration. When enabled, HiveMind makes one 30-second/no-retry Responses API call only after an Elasticsearch-backed maximum-cost reservation. It settles known usage, conservatively retains uncertain reservations, limits a browser to three paid generations a minute, and caches a validated evidence/window result for 60 seconds across replicas. Model output must use the retrieved source IDs; unsupported or expired citations are never displayed. The code intentionally does not infer a model or activate spending from an API key.
 
 ### Dash0 telemetry
 
@@ -109,5 +110,5 @@ This project was built with AI coding assistance. Human review is required for e
 
 1. Approve and apply the preflighted namespace, secrets, image pull policy, ingress/DNS, then verify a phone on cellular and two independent browsers within one polling interval.
 2. Add report ownership edits, questions/replies, two-session flags, authenticated moderation, and concurrency tests.
-3. Import the official schedule with source timestamps and a last-good snapshot, then add keyword retrieval and sourced answers with explicit uncertainty.
+3. Configure a reviewed OpenAI model/pricing, then add structured cited summaries with the shared Elasticsearch budget ledger, cache coalescing, and failure-safe reconciliation.
 4. Design the isolated, manually triggered evolution runner: sanitized aggregate usage, branch-only changes, Gitar review, CI, staging, manual promotion, rollback, and freeze tests. It must remain disabled until separately approved.

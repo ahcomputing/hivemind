@@ -1,3 +1,4 @@
+from decimal import Decimal
 from functools import lru_cache
 
 from pydantic import model_validator
@@ -17,7 +18,18 @@ class Settings(BaseSettings):
     admin_username: str | None = None
     admin_password: str | None = None
     openai_api_key: str | None = None
-    openai_monthly_cap_usd: int = 0
+    # Generation remains opt-in.  A model and its current prices must be set
+    # together before this becomes true; a key alone must never spend money.
+    openai_summary_enabled: bool = False
+    openai_summary_model: str | None = None
+    openai_input_usd_per_million_tokens: Decimal | None = None
+    openai_output_usd_per_million_tokens: Decimal | None = None
+    openai_monthly_cap_usd: Decimal = Decimal("50")
+    openai_summary_max_input_tokens: int = 12_000
+    openai_summary_max_output_tokens: int = 600
+    openai_summary_timeout_seconds: int = 30
+    summary_rate_limit_count: int = 3
+    summary_rate_limit_seconds: int = 60
     evolution_enabled: bool = False
     evolution_schedule: str | None = None
     report_rate_limit_count: int = 5
@@ -45,6 +57,25 @@ class Settings(BaseSettings):
                 raise ValueError("production requires admin authentication configuration")
         if self.evolution_enabled:
             raise ValueError("evolution is intentionally disabled in this increment")
+        if self.openai_summary_enabled:
+            if not self.openai_api_key:
+                raise ValueError("OPENAI_API_KEY is required when summaries are enabled")
+            if not self.openai_summary_model:
+                raise ValueError("OPENAI_SUMMARY_MODEL must be explicitly configured")
+            if not all(
+                value is not None and value > 0
+                for value in (
+                    self.openai_input_usd_per_million_tokens,
+                    self.openai_output_usd_per_million_tokens,
+                )
+            ):
+                raise ValueError("verified OpenAI input/output pricing is required")
+            if self.openai_monthly_cap_usd != Decimal("50"):
+                raise ValueError("HiveMind's OpenAI monthly cap must be exactly 50 USD")
+            if self.openai_summary_timeout_seconds != 30:
+                raise ValueError("OpenAI summary requests must time out after 30 seconds")
+            if self.openai_summary_max_input_tokens <= 0 or self.openai_summary_max_output_tokens <= 0:
+                raise ValueError("OpenAI summary token limits must be positive")
         return self
 
     @property
@@ -54,6 +85,22 @@ class Settings(BaseSettings):
     @property
     def reports_index(self) -> str:
         return f"{self.elasticsearch_index_prefix}_reports"
+
+    @property
+    def official_events_index(self) -> str:
+        return f"{self.elasticsearch_index_prefix}_official_events"
+
+    @property
+    def event_state_index(self) -> str:
+        return f"{self.elasticsearch_index_prefix}_event_state"
+
+    @property
+    def opportunity_cache_index(self) -> str:
+        return f"{self.elasticsearch_index_prefix}_opportunity_cache"
+
+    @property
+    def usage_index(self) -> str:
+        return f"{self.elasticsearch_index_prefix}_usage"
 
 
 @lru_cache

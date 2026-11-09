@@ -4,7 +4,9 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 Category = Literal["coffee", "general", "help", "accessibility", "demo"]
-ExpiryChoice = Literal["15m", "1h", "end_of_day", "custom"]
+ExpiryChoice = Literal[
+    "15m", "30m", "45m", "1h", "75m", "90m", "105m", "120m", "end_of_day", "custom"
+]
 
 
 class ReportInput(BaseModel):
@@ -12,6 +14,7 @@ class ReportInput(BaseModel):
     location: str | None = Field(default=None, max_length=120)
     category: Category = "general"
     expiration: ExpiryChoice = "1h"
+    starts_at: datetime | None = None
     custom_expires_at: datetime | None = None
 
     @field_validator("content")
@@ -26,3 +29,7 @@ class ReportInput(BaseModel):
     @classmethod
     def normalize_location(cls, value: str | None) -> str | None:
         return value.strip() if value and value.strip() else None
+
+
+class OpportunitySummaryInput(BaseModel):
+    window_minutes: Literal[30, 60, 90, 120] = 30
