@@ -1,6 +1,9 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from hivemind.main import expiry_for
+from hivemind.models import ReportInput
+
 
 def bootstrap(client):
     response = client.post("/api/session/bootstrap")
@@ -36,6 +39,15 @@ def test_validation_and_past_custom_expiration(client):
         custom_expires_at=(datetime.now(UTC) - timedelta(minutes=1)).isoformat(),
     )
     assert response.status_code == 422
+
+
+def test_custom_expiry_is_resolved_in_mountain_time_with_dst():
+    now = datetime(2026, 6, 1, 12, tzinfo=UTC)
+    result = expiry_for(
+        ReportInput(content="test", expiration="custom", custom_expires_at="2026-06-01T12:00"),
+        now,
+    )
+    assert result == datetime(2026, 6, 1, 18, tzinfo=UTC)
 
 
 def test_cookie_ownership_and_csrf_rejection(client):

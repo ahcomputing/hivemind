@@ -34,12 +34,16 @@ class FakeRepository:
     async def create_report(self, report_id, document):
         self.reports[report_id] = document
 
-    async def report_count_since(self, session_id, after):
-        return sum(
-            1
-            for report in self.reports.values()
-            if report["session_id"] == session_id and report["created_at"] >= after
-        )
+    async def consume_report_slot(self, session_id, window, limit):
+        session = self.sessions[session_id]
+        if session.get("rate_window") != window:
+            session["rate_window"] = window
+            session["rate_count"] = 1
+            return True
+        if session["rate_count"] >= limit:
+            return False
+        session["rate_count"] += 1
+        return True
 
     async def list_active_reports(self, category=None):
         now = datetime.now(UTC)

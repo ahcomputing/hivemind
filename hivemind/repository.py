@@ -2,7 +2,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from elasticsearch import AsyncElasticsearch, NotFoundError
+from elasticsearch import AsyncElasticsearch, BadRequestError, NotFoundError
 
 from .config import Settings
 
@@ -15,6 +15,8 @@ SESSION_MAPPING = {
         "csrf_hash": {"type": "keyword", "index": False},
         "avatar_seed": {"type": "keyword"},
         "created_at": {"type": "date"},
+        "rate_window": {"type": "long"},
+        "rate_count": {"type": "integer"},
     },
 }
 REPORT_MAPPING = {
@@ -42,21 +44,32 @@ class ElasticsearchRepository:
             settings.elasticsearch_url, basic_auth=auth if all(auth) else None
         )
         self.settings = settings
+        self._initialized = False
 
     async def close(self) -> None:
         await self.client.close()
 
     async def initialize(self) -> None:
+        if self._initialized:
+            return
         for index, mapping in (
             (self.settings.sessions_index, SESSION_MAPPING),
             (self.settings.reports_index, REPORT_MAPPING),
         ):
             if not await self.client.indices.exists(index=index):
-                await self.client.indices.create(index=index, mappings=mapping)
+                try:
+                    await self.client.indices.create(index=index, mappings=mapping)
+                except BadRequestError:
+                    if not await self.client.indices.exists(index=index):
+                        raise
+        self._initialized = True
 
     async def ready(self) -> bool:
         try:
-            return bool(await self.client.ping())
+            if not await self.client.ping():
+                return False
+            await self.initialize()
+            return True
         except Exception:  # health endpoint must not reveal connection details
             return False
 
@@ -77,24 +90,32 @@ class ElasticsearchRepository:
             index=self.settings.sessions_index, id=session_id, document=document, refresh="wait_for"
         )
 
+    async def consume_report_slot(self, session_id: str, window: int, limit: int) -> bool:
+        result = await self.client.update(
+            index=self.settings.sessions_index,
+            id=session_id,
+            refresh="wait_for",
+            script={
+                "lang": "painless",
+                "source": """
+                    if (ctx._source.rate_window != params.window) {
+                      ctx._source.rate_window = params.window;
+                      ctx._source.rate_count = 1;
+                    } else if (ctx._source.rate_count >= params.limit) {
+                      ctx.op = 'none';
+                    } else {
+                      ctx._source.rate_count += 1;
+                    }
+                """,
+                "params": {"window": window, "limit": limit},
+            },
+        )
+        return result["result"] != "noop"
+
     async def create_report(self, report_id: str, document: dict[str, Any]) -> None:
         await self.client.index(
             index=self.settings.reports_index, id=report_id, document=document, refresh="wait_for"
         )
-
-    async def report_count_since(self, session_id: str, after: datetime) -> int:
-        result = await self.client.count(
-            index=self.settings.reports_index,
-            query={
-                "bool": {
-                    "filter": [
-                        {"term": {"session_id": session_id}},
-                        {"range": {"created_at": {"gte": after.isoformat()}}},
-                    ]
-                }
-            },
-        )
-        return int(result["count"])
 
     async def list_active_reports(self, category: str | None = None) -> list[dict[str, Any]]:
         filters: list[dict[str, Any]] = [

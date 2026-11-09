@@ -154,6 +154,8 @@ def create_app(
                 "csrf_hash": digest(csrf_token),
                 "avatar_seed": avatar_seed,
                 "created_at": datetime.now(UTC),
+                "rate_window": -1,
+                "rate_count": 0,
             },
         )
         response.set_cookie(
@@ -190,11 +192,9 @@ def create_app(
         if not csrf_token or not secrets.compare_digest(digest(csrf_token), session["csrf_hash"]):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF validation failed")
         now = datetime.now(UTC)
-        if (
-            await repository.report_count_since(
-                session_id, now - timedelta(seconds=runtime_settings.report_rate_limit_seconds)
-            )
-            >= runtime_settings.report_rate_limit_count
+        rate_window = int(now.timestamp() // runtime_settings.report_rate_limit_seconds)
+        if not await repository.consume_report_slot(
+            session_id, rate_window, runtime_settings.report_rate_limit_count
         ):
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS, "rate limit exceeded; please wait"
