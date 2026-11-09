@@ -31,6 +31,7 @@ from .summaries import (
 )
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 MOUNTAIN = ZoneInfo("America/Denver")
 COOKIE_NAME = "hivemind_session"
 CSRF_COOKIE_NAME = "hivemind_csrf"
@@ -122,6 +123,10 @@ async def current_opportunity_evidence(
 async def database_or_503(request: Request) -> ElasticsearchRepository:
     repository = get_repository(request)
     if not await repository.ready():
+        logger.warning(
+            "report request rejected: database unavailable",
+            extra={"event.name": "hivemind.report.rejected", "hivemind.rejection.reason": "database"},
+        )
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "database unavailable")
     return repository
 
@@ -152,10 +157,18 @@ async def fetch_avatar_png(seed: str, avatar_service_url: str) -> bytes:
 async def owned_session(request: Request, repository: ElasticsearchRepository) -> tuple[str, dict]:
     value = request.cookies.get(COOKIE_NAME)
     if not value or "." not in value:
+        logger.warning(
+            "report request rejected: anonymous session required",
+            extra={"event.name": "hivemind.report.rejected", "hivemind.rejection.reason": "session"},
+        )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "anonymous session required")
     session_id, secret = value.split(".", 1)
     session = await repository.get_session(session_id)
     if not session or not verify(secret, session["secret_hash"]):
+        logger.warning(
+            "report request rejected: invalid browser session",
+            extra={"event.name": "hivemind.report.rejected", "hivemind.rejection.reason": "session"},
+        )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid browser session")
     return session_id, session
 
@@ -176,6 +189,8 @@ def create_app(
             await repository.initialize()
         except Exception:
             logger.warning("Elasticsearch is unavailable at startup; readiness will remain false")
+        else:
+            logger.info("HiveMind started", extra={"event.name": "hivemind.application.started"})
         yield
         if app.state.summarizer:
             await app.state.summarizer.close()
@@ -303,6 +318,10 @@ def create_app(
         session_id, session = await owned_session(request, repository)
         csrf_token = request.headers.get("X-CSRF-Token", "")
         if not csrf_token or not secrets.compare_digest(digest(csrf_token), session["csrf_hash"]):
+            logger.warning(
+                "report request rejected: CSRF validation failed",
+                extra={"event.name": "hivemind.report.rejected", "hivemind.rejection.reason": "csrf"},
+            )
             raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF validation failed")
         now = datetime.now(UTC)
         starts_at = start_for(payload, now)
@@ -311,6 +330,10 @@ def create_app(
         if not await repository.consume_report_slot(
             session_id, rate_window, runtime_settings.report_rate_limit_count
         ):
+            logger.warning(
+                "report request rejected: rate limit exceeded",
+                extra={"event.name": "hivemind.report.rejected", "hivemind.rejection.reason": "rate_limit"},
+            )
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS, "rate limit exceeded; please wait"
             )
@@ -326,7 +349,22 @@ def create_app(
             "session_id": session_id,
             "avatar_seed": session["avatar_seed"],
         }
-        await repository.create_report(report_id, document)
+        try:
+            await repository.create_report(report_id, document)
+        except Exception:
+            logger.error(
+                "report persistence failed",
+                extra={"event.name": "hivemind.report.persistence_failed"},
+            )
+            raise
+        logger.info(
+            "report created",
+            extra={
+                "event.name": "hivemind.report.created",
+                "hivemind.report.category": payload.category,
+                "hivemind.report.expiration": payload.expiration,
+            },
+        )
         return {"report": public_report({"id": report_id, **document})}
 
     @app.post("/api/opportunities/summary")
