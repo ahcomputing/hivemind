@@ -1,44 +1,147 @@
-# HiveMind
+<p align="center">
+  <img src="hivemind/static/ui/icons/favicon.svg" width="96" alt="HiveMind brain in a jar">
+</p>
 
-HiveMind is an attendee-powered, mobile-first conference signal board. Visitors can view a source-first opportunities briefing, share short expiring reports, and see active attendee reports in other browsers. Reports are unverified observations and are always labelled separately from official-event data.
+<h1 align="center">HiveMind</h1>
 
-## What works now
+<p align="center"><strong>Live, source-aware conference signal—made by the people in the room.</strong></p>
 
-- Three purple, keyboard-accessible pages: the opportunities briefing with an optional interest-based “Find my ideal talk” recommendation, Share an update, and the 15-second-polling User reports feed with a Coffee filter.
-- Reports of up to 500 characters, optional location/category/start time, and 15–120-minute, end-of-day, or future custom expiry. Storage is UTC; the browser displays America/Denver time. Relative expiry runs from the selected start time.
-- An operator-run official-event importer for the public Sessionize endpoint, with a separate reviewed Monday hackathon dataset. It validates the complete response before atomically switching the public reader to a new snapshot, retaining the last-good schedule on failure. Run `uv run python scripts/import_official_events.py --include-monday-hackathon` locally. The production image includes that same script so an approved operator can run `kubectl exec -n hivemind <app-pod> -- python scripts/import_official_events.py --include-monday-hackathon`; it never runs automatically.
-- Avatar-only reporter identity: no username, handle, or display name is created. An HttpOnly session cookie contains a private random identifier plus secret; only SHA-256 hashes of secrets live in Elasticsearch. A separate public random avatar seed is sent to HiveMind's own self-hosted RoboHash instance. Failed avatar images fall back to a local robot glyph.
-- CSRF checks, ownership checks, server-side validation, escaped client rendering, query-time active/expiration filtering, and a persistent per-session anonymous write limit.
-- Optional Dash0-compatible OpenTelemetry tracing, shipped disabled. It uses the standard OTLP/HTTP exporter, so no Dash0 SDK is coupled into the request path.
-- Elasticsearch is the only primary application store. The mapped indices include `hivemind_sessions`, `hivemind_reports`, and `hivemind_official_events` by default; set `ELASTICSEARCH_INDEX_PREFIX` to isolate an environment.
+<p align="center">
+  <a href="https://hivemind.ahcomputing.com">Visit HiveMind</a>
+  ·
+  <a href="https://github.com/ahcomputing/hivemind/actions">Build status</a>
+  ·
+  <a href="https://github.com/ahcomputing/hivemind/pkgs/container/hivemind">Container images</a>
+</p>
 
-## Architecture
+HiveMind is a mobile-first conference signal board. Visitors can find official
+events, ask for a cited talk recommendation, share short-lived observations,
+and see the current attendee feed from other browsers. Official schedule data
+and attendee reports are deliberately presented as different kinds of evidence:
+one is a source; the other is an observation from the hive.
+
+> **Live:** [hivemind.ahcomputing.com](https://hivemind.ahcomputing.com) ·
+> **Timezone:** America/Denver for display, UTC for storage ·
+> **Identity:** a browser has a robot—not a username or profile.
+
+## What is here now
+
+- **Three focused pages.** The source-first opportunities page, a Share an
+  update form, and a 15-second-polling User reports feed with a Coffee filter.
+- **Official schedule, safely imported.** An operator-triggered Sessionize
+  importer validates a complete response before atomically switching readers
+  to a new snapshot. A reviewed Monday hackathon dataset joins the same
+  snapshot. If an import fails, readers keep the last known-good schedule.
+- **Cited “Find my ideal talk” recommendations.** A visitor can enter their
+  interests and receive recommendations grounded in current official events.
+  Attendee reports may add clearly labelled context—such as a room filling up
+  fast—but every recommendation must cite at least one official event.
+- **Anonymous, not unaccountable.** Reports allow up to 500 characters, an
+  optional location, category, start time, and an expiry of 15–120 minutes,
+  end of day, or a future custom time. Server-side validation, expiration,
+  CSRF checks, ownership checks, escaping, and persistent per-browser rate
+  limits apply to every report.
+- **Robot-only identity.** An HttpOnly browser cookie holds a private random
+  identifier and secret; only SHA-256 secret hashes are stored. A distinct
+  public seed selects a self-hosted RoboHash robot. A local glyph appears if
+  RoboHash is unavailable.
+- **Operationally visible.** OpenTelemetry traces and structured application
+  logs export to Dash0 using standard OTLP/HTTP. Kubernetes provides liveness
+  and readiness checks; Dash0 is deliberately human-monitored rather than an
+  automatic recovery system.
+- **One real datastore.** Elasticsearch is the only primary store for session
+  records, reports, official-event snapshots, bounded recommendation cache,
+  and AI usage accounting.
+
+## The shape of the system
 
 ```text
-browser -- HTTPS --> mailserver Nginx --> Traefik Ingress --> FastAPI replicas --> internal Elasticsearch StatefulSet
-                        |                    |              |
-                        |                    |              +-- Jinja + minimal JavaScript, 15 s polling
-                        |                    +-- private-LAN HTTP only
-                        +-- public Let's Encrypt certificate
+browser
+  │ HTTPS
+  ▼
+mailserver Nginx ──► Traefik Ingress ──► 2 × FastAPI replicas
+                                                │
+                                                ├──► internal Elasticsearch StatefulSet
+                                                ├──► self-hosted RoboHash
+                                                └──► Dash0 (OTLP traces + logs)
 ```
 
-The browser never talks to Elasticsearch. Session identifiers, session secret hashes, CSRF hashes, and public avatar seeds are separate fields. A report stores the owning session identifier privately and only returns its public attributes to the feed. Expiration and status are filters in every public report query rather than a browser-only convention.
+Public TLS terminates at the mailserver Nginx. The cluster ingress accepts only
+the private-LAN HTTP hop. Browsers never communicate with Elasticsearch,
+RoboHash's cluster address, or Dash0 directly.
 
-## Local setup
+| Concern | Implementation |
+| --- | --- |
+| Application data | Authenticated single-node Elasticsearch on a 10 GiB Longhorn PVC |
+| Public identity | Per-browser robot avatar; no handles, usernames, or profiles |
+| Schedule freshness | Atomically published last-good snapshot with displayed refresh time |
+| AI output | Structured, cited Responses API output with a fixed budget and safe fallback |
+| Telemetry | Dash0 via vendor-neutral OpenTelemetry / OTLP |
+| Delivery | Immutable commit-SHA images in GHCR; reviewed deployment promotion is separate |
+| Cluster view | Radar for Kubernetes topology, resources, logs, events, and diagnostics |
 
-1. Copy `.env.example` to `.env`, then replace every `CHANGE_ME` value. The local `.env` is ignored. Development may use `COOKIE_SECURE=false`; production cannot.
+## Completed portions
+
+### Conference experience
+
+- Mobile-first purple UI with keyboard-accessible controls and reduced-motion
+  support.
+- Shared anonymous reports across browsers, with safe rendering and
+  server-side active/status/expiration filtering.
+- Self-hosted RoboHash avatar delivery through same-origin `/avatars/<seed>.png`.
+- Official-session importer with snapshot semantics and a public freshness cue.
+- Source cards for official events and attendee observations, kept visually and
+  semantically distinct.
+
+### Cited assistance, with spending controls
+
+- An optional `gpt-6-luna` Responses API path for opportunity briefs and
+  interest-based talk recommendations.
+- Explicit model and verified price configuration; a fixed **$50 UTC-month**
+  maximum; 30-second timeout; no retry; bounded input/output tokens.
+- Elasticsearch-backed maximum-cost reservation, actual-usage reconciliation,
+  uncertain-reservation retention, cross-replica 60-second evidence caching,
+  and a three-generation-per-browser-per-minute limit.
+- If AI, accounting, or the monthly cap is unavailable, source cards remain
+  useful and the application does not pretend a summary exists.
+
+### Deployment and review path
+
+- Two FastAPI replicas, internal Elasticsearch, Longhorn-backed storage,
+  Traefik ingress, and public mailserver TLS routing.
+- GitHub Actions runs Ruff and pytest, then publishes an immutable
+  `ghcr.io/ahcomputing/hivemind:<commit-sha>` image only after `main` passes.
+- Gitar and CI are required checks on `main`; repository-specific review
+  guidance covers privacy, citations, accessibility, spending, and deployment
+  boundaries.
+- Dash0 receives application telemetry; Radar provides the Kubernetes
+  operations view. Neither product automatically changes production state.
+
+## Run it locally
+
+1. Copy `.env.example` to `.env` and replace every `CHANGE_ME` value. The
+   local `.env` is ignored by Git. Development may use `COOKIE_SECURE=false`;
+   production cannot.
 2. Install dependencies with `uv sync --all-groups`.
-3. Start authenticated Elasticsearch, the self-hosted RoboHash renderer, and the app: `docker compose up --build`.
-4. Open `http://localhost:8080`. The app liveness endpoint is `/healthz`; `/readyz` returns 503 until Elasticsearch is reachable.
+3. Start authenticated Elasticsearch, the self-hosted RoboHash renderer, and
+   the app:
 
-Run checks with:
+   ```bash
+   docker compose up --build
+   ```
+
+4. Open <http://localhost:8080>. `/healthz` is the liveness endpoint;
+   `/readyz` returns `503` until Elasticsearch is reachable.
+
+Run the ordinary checks:
 
 ```bash
 uv run ruff check hivemind tests
 uv run pytest -q
 ```
 
-The real-Elasticsearch integration test is opt-in and never silently substitutes an in-memory database:
+The real-Elasticsearch integration suite is deliberately opt-in; it never
+silently uses an in-memory substitute:
 
 ```bash
 ELASTICSEARCH_INTEGRATION_URL=http://localhost:9200 \
@@ -46,69 +149,116 @@ ELASTICSEARCH_USERNAME=elastic ELASTICSEARCH_PASSWORD='…' \
 uv run pytest -m integration -q
 ```
 
-After local Compose is healthy, `scripts/verify-elasticsearch-restart.sh` writes a proof record, restarts Elasticsearch, and reads it back. It is an explicit operator check, not an unrun claim.
+After Compose is healthy, `scripts/verify-elasticsearch-restart.sh` writes a
+proof record, restarts Elasticsearch, and verifies the record survives. It is
+an explicit operator check, not an unrun claim.
 
-## Configuration and secrets
+## Configuration and AI safety
 
-`.env.example` documents every setting. Startup rejects placeholder secrets, a too-short `APP_SECRET`, production without secure cookies or Elasticsearch/admin credentials, and any attempt to enable evolution. No setting values are logged. Kubernetes refers to an out-of-band `hivemind-secrets` Secret; `k8s/secrets.example.yaml` is intentionally unusable.
+`.env.example` documents every setting. Startup rejects placeholder secrets, a
+short `APP_SECRET`, production without secure cookies or Elasticsearch/admin
+credentials, and any attempt to enable evolution. Values are never logged.
+Kubernetes refers to an out-of-band `hivemind-secrets` Secret;
+`k8s/secrets.example.yaml` is intentionally unusable.
 
-`OPENAI_API_KEY`, an admin account, and evolution settings are configuration placeholders only. The opportunities endpoint provides safe source cards while AI is disabled. Paid summaries require `OPENAI_SUMMARY_ENABLED=true`, an explicit model, verified current input/output prices, and the fixed $50 UTC-month cap; startup rejects an incomplete or altered paid configuration. When enabled, HiveMind makes one 30-second/no-retry Responses API call only after an Elasticsearch-backed maximum-cost reservation. It settles known usage, conservatively retains uncertain reservations, limits a browser to three paid generations a minute, and caches a validated evidence/window result for 60 seconds across replicas. “Find my ideal talk” adds the visitor’s typed interests to that same request; the interests are untrusted input, are not associated with a session identifier, and affect only the hashed cache key rather than a separate stored profile. Model output must use the retrieved source IDs; ideal-talk recommendations additionally require an official-event citation, while attendee reports are shown only as labeled observation context. Unsupported or expired citations are never displayed. The code intentionally does not infer a model or activate spending from an API key.
+An OpenAI key alone never enables paid traffic. Paid recommendations require
+all of the following together:
+
+- `OPENAI_SUMMARY_ENABLED=true`
+- an explicit model identifier
+- verified input and output pricing
+- the fixed $50 UTC-month cap
+
+The visitor's interests are untrusted prompt input. They are not linked to a
+session identifier, avatar seed, or stored profile; they affect only a hashed
+cache key. Output must cite retrieved evidence. An ideal-talk result must cite
+an official event, while attendee reports may appear only as labelled context.
+Expired or unsupported citations are discarded before display.
 
 ### Dash0 telemetry
 
-The container starts through `opentelemetry-instrument`, with `OTEL_SDK_DISABLED=true` by default. To use Dash0 after approval, change that setting to `false`, put the Dash0 OTLP/HTTP base endpoint in `OTEL_EXPORTER_OTLP_ENDPOINT`, and store `OTEL_EXPORTER_OTLP_HEADERS` only in `hivemind-secrets` (for example `authorization=Bearer …,dash0-dataset=default`). The standard HTTP exporter appends signal paths such as `/v1/traces`; do not add them to the base endpoint. Do not set OpenTelemetry header/body capture options: HiveMind report text, cookie values, CSRF tokens, session identifiers, locations, and avatar seeds are intentionally excluded from telemetry. This follows Dash0’s OTLP endpoint/header configuration guidance. [Dash0 OpenTelemetry environment variables](https://www.dash0.com/guides/opentelemetry-environment-variables)
+HiveMind uses `opentelemetry-instrument` and the standard OTLP/HTTP exporter.
+Set `OTEL_SDK_DISABLED=false`, configure the Dash0 base endpoint in
+`OTEL_EXPORTER_OTLP_ENDPOINT`, and keep `OTEL_EXPORTER_OTLP_HEADERS` solely in
+`hivemind-secrets`. The exporter adds paths such as `/v1/traces` itself.
 
-## Kubernetes and image delivery
+Do **not** enable OpenTelemetry header or body capture. Report text, cookie
+values, CSRF tokens, session identifiers, locations, and avatar seeds are
+excluded from telemetry by design. See [Dash0’s OpenTelemetry environment
+variable guidance](https://www.dash0.com/guides/opentelemetry-environment-variables).
 
-`k8s/` contains namespace-scoped resources only:
+## Operations and delivery
 
-- a Longhorn-backed, secured single Elasticsearch StatefulSet (10 GiB PVC), internal-only Service, and explicit resource limits;
-- a two-replica FastAPI Deployment, Service, Traefik Ingress for `hivemind.ahcomputing.com`, and health probes;
-- no production Secret values, DNS modification, cluster-wide resource, scheduler, or auto-promotion.
+`k8s/` contains namespace-scoped resources:
 
-Before any apply, run `scripts/preflight-cluster.sh`. It only reads cluster state and host `vm.max_map_count`; Elasticsearch needs a value of at least 262144 on each possible node. Confirm Longhorn's current schedulable capacity and two-replica health too. Do not change a node kernel setting or a storage-class default implicitly. Public TLS terminates at the mailserver Nginx ingress; the namespace-scoped Traefik rule intentionally accepts only its private-LAN HTTP hop. DNS/public routing and deployment are approval gates.
+- a secured, Longhorn-backed Elasticsearch StatefulSet and internal-only
+  service;
+- a two-replica FastAPI Deployment, Service, Traefik Ingress, probes, and
+  resource limits;
+- no production secret values, DNS mutation, cluster-wide default change, or
+  deployment auto-promotion.
 
-After the app is healthy and `hivemind.ahcomputing.com` resolves to the mailserver's public address, copy `scripts/deploy_mailserver.py` to that host and run it there. It writes only the HiveMind virtual host, checks Nginx before each reload, keeps a timestamped backup of a prior script-managed version, verifies the private Traefik upstream, and invokes the mailserver's existing Certbot integration. Run with `--dry-run` first; supply `--email` only for a non-interactive first Certbot registration.
+Before an apply, run `scripts/preflight-cluster.sh`. It reads current cluster
+state and `vm.max_map_count`; Elasticsearch needs at least `262144` on every
+possible node. Confirm Longhorn's schedulable capacity and two-replica health
+before changing storage. Do not alter node settings or the default storage
+class implicitly.
 
-GitHub Actions runs Ruff and pytest, then publishes only an immutable `ghcr.io/ahcomputing/hivemind:<commit-sha>` image on a `main` push. Publishing does not edit a manifest or deploy. Promote a reviewed SHA separately, substituting the exact image into `k8s/app.yaml`; configure a scoped image-pull secret only if GHCR remains private.
+For the mailserver edge, use `scripts/deploy_mailserver.py` on that host. It
+writes only the HiveMind virtual host, validates Nginx before reload, retains a
+timestamped script-managed backup, verifies the private Traefik upstream, and
+uses the mailserver's existing Certbot integration. Start with `--dry-run`;
+use `--email` only for a first non-interactive Certbot registration.
 
-## Privacy, security, and limitations
+GitHub Actions publishes, but does not deploy. Promote a reviewed SHA
+separately, then verify rollout, public `/readyz`, and the intended user flow.
 
-Avatars are rendered by a RoboHash instance HiveMind runs itself (`k8s/robohash/`), so no third party receives the request. The browser gets a same-origin `/avatars/<seed>.png` image; HiveMind validates the public seed and fetches only from the fixed cluster-local RoboHash Service. This prevents a phone from treating a private/Tailnet RoboHash address as a local-network request. The avatar request carries only the public random seed: no session IDs, session secrets, IP addresses from the app, or report text. If RoboHash is unreachable, the image request fails and the browser shows a local glyph rather than falling back to a public service, so the seed never leaves this infrastructure. The honest limitation runs the other way: avatars now depend on the cluster being up. No Content-Security-Policy is set today; when one is added, `img-src` can remain `'self'`. Clearing browser data gives that browser a new robot. Robots are the only public attribution, not accounts or proof of a unique person.
+## Privacy, attribution, and limits
 
-This release has no login, author edits, moderator UI, flags, questions/replies, official content import, search UI, provenance, backup automation, high availability, or accessibility certification. Elasticsearch is single-node and therefore not highly available. Longhorn protects the volume, not service availability. Mobile layout and keyboard controls are implemented and covered by source-level checks, but a real phone-on-cellular test remains a public-launch gate.
+RoboHash runs inside the cluster rather than at the public service. The browser
+requests only same-origin `/avatars/<seed>.png`; HiveMind validates the public
+seed and fetches only from the fixed cluster-local service. No session secret,
+IP address, or report text goes to RoboHash. If the renderer is unavailable,
+the browser uses a local glyph instead of falling back to a third party.
 
-## Avatars and attribution
+The classic robot set is by Zikri Kader under
+[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); RoboHash's Python
+code is MIT. See `k8s/robohash/` and `hivemind/static/ui/README.md` before
+changing the set or its credit.
 
-Avatars come from a RoboHash instance HiveMind runs on its own cluster rather than
-from the public service. The manifests are in `k8s/robohash/`; it is a stateless
-Deployment of upstream's published image pinned by digest, on its own host so other
-projects can share it. Deploy it with `kubectl apply -k k8s/robohash/`, and point the
-app at it with `AVATAR_SERVICE_URL`; the browser-facing `AVATAR_BASE_URL` stays `/avatars`.
+HiveMind does **not** currently provide login, author edits, flags, a moderator
+UI, questions/replies, search, a provenance browser, backup automation,
+Elasticsearch high availability, or an accessibility certification. Longhorn
+protects the volume, not service availability. The mobile UI and keyboard
+controls have source-level coverage, but a real phone-on-cellular check remains
+the final public-launch acceptance test.
 
-That bundle creates a `robohash` Namespace, which is a cluster-scoped object and
-so an exception to the namespace-scoped rule in `.gitar/review/README.md`. The
-approval for it, who gave it and the alternative that was rejected are recorded
-in the header of `k8s/robohash/namespace.yaml`.
+## Abandoned features — by design
 
-RoboHash's Python code is MIT. Its artwork is Creative Commons and per-set, so
-self-hosting it means carrying the attribution ourselves:
+These are intentional product and safety decisions, not hidden roadmap items:
 
-- **set1, "classic robots" (in use): Zikri Kader, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).**
-- set2 monsters: Hrvoje Novakovic, CC BY 3.0. set3 robot heads: Julian Peter Arias,
-  CC BY 3.0. set4 cats: David Revoy, CC BY 4.0. set5 humans: Pablo Stanley. set6
-  cosmic apes: OceanSlim, CC0.
-
-If you change the `set=` parameter in `avatar()` in `hivemind/static/app.js`, update
-the credit line in the page footer to match the artist for that set.
+- **Self-evolution or an evolution scheduler.** HiveMind will not autonomously
+  inspect usage, alter its code, open a PR, merge, or deploy. The setting is
+  rejected at startup. Product changes stay branch-based, reviewed, tested,
+  and manually promoted.
+- **Automatic production promotion and recovery.** CI publishes an immutable
+  image; a person approves deployment. Dash0 and Radar provide visibility, and
+  Kubernetes probes may restart a failed container, but no system performs an
+  automatic rollback or product-level repair.
+- **Usernames, handles, profiles, and account identity.** The robot is the
+  entire public attribution model. Clearing browser data produces a new robot.
+- **Third-party avatar delivery.** HiveMind does not fall back to public
+  RoboHash; avatar seeds stay on this infrastructure.
+- **Automatic schedule scraping or refresh.** Official schedule imports are
+  explicit operator actions so a bad upstream response cannot silently replace
+  the last-good snapshot.
+- **Unbounded or unsourced AI answers.** No key-only activation, arbitrary web
+  retrieval, uncited generated claims, or open-ended spend is part of HiveMind.
 
 ## AI assistance and review
 
-This project was built with AI coding assistance. Human review is required for every deployment and for any future feature that processes reports, uses AI, or changes infrastructure. `.gitar/review/` supplies repository-specific review guidance for session privacy, accessibility, source claims, and the permanently-off evolution controls. Verify that Gitar's GitHub App has actually reviewed the final feature PR and rerun checks on its final head SHA; the repository does not claim that configuration is already complete.
-
-## Next milestones
-
-1. Approve and apply the preflighted namespace, secrets, image pull policy, ingress/DNS, then verify a phone on cellular and two independent browsers within one polling interval.
-2. Add report ownership edits, questions/replies, two-session flags, authenticated moderation, and concurrency tests.
-3. Configure a reviewed OpenAI model/pricing, then add structured cited summaries with the shared Elasticsearch budget ledger, cache coalescing, and failure-safe reconciliation.
-4. Design the isolated, manually triggered evolution runner: sanitized aggregate usage, branch-only changes, Gitar review, CI, staging, manual promotion, rollback, and freeze tests. It must remain disabled until separately approved.
+This project was built with AI coding assistance. Human review remains required
+for deployments and for changes touching reports, AI, or infrastructure.
+`.gitar/review/` provides project-specific review guidance. Gitar must review
+the final PR commit, CI must pass that exact commit, and deployment promotion
+remains a separate human decision.
