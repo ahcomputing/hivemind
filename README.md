@@ -85,6 +85,11 @@ Deployment of upstream's published image pinned by digest, on its own host so ot
 projects can share it. Deploy it with `kubectl apply -k k8s/robohash/`, and point the
 app at it with `AVATAR_BASE_URL`.
 
+That bundle creates a `robohash` Namespace, which is a cluster-scoped object and
+so an exception to the namespace-scoped rule in `.gitar/review/README.md`. The
+approval for it, who gave it and the alternative that was rejected are recorded
+in the header of `k8s/robohash/namespace.yaml`.
+
 RoboHash's Python code is MIT. Its artwork is Creative Commons and per-set, so
 self-hosting it means carrying the attribution ourselves:
 

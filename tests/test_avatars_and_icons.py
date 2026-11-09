@@ -105,5 +105,5 @@ def test_manifest_is_installable():
     assert any(purpose == "maskable" for _, purpose in declared)
 
     for icon in data["icons"]:
-        assert Path("hivemind") / icon["src"].removeprefix("/static") != ICONS
+        assert icon["src"].startswith("/static/ui/icons/"), icon["src"]
         assert (Path("hivemind/static") / icon["src"].removeprefix("/static/")).is_file()
