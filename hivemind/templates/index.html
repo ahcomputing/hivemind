@@ -2,18 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>HiveMind — conference updates</title><link rel="stylesheet" href="/static/app.css"><link rel="stylesheet" href="/static/ui/topbar.css">
+    <title>HiveMind — conference updates</title><link rel="stylesheet" href="/static/app.css">
   </head>
   <body>
-    {% include "_topbar.html" %}
     <main class="shell">
-      <header><div><p class="eyebrow">ATTENDEE SIGNAL</p><h1>HiveMind</h1><p class="subtitle">What’s happening right now, shared by people here.</p></div></header>
+      <header><div class="mark" aria-hidden="true">🧠</div><div><p class="eyebrow">ATTENDEE SIGNAL</p><h1>HiveMind</h1><p class="subtitle">What’s happening right now, shared by people here.</p></div></header>
       <section class="notice" aria-label="Privacy notice">You get a random browser identity. Robot avatars load from RoboHash using a public random seed; they never receive your session secret or personal details.</section>
       <section class="card" aria-labelledby="share-heading"><h2 id="share-heading">Share an update</h2>
         <form id="report-form"><label for="content">Update <span>(up to 500 characters)</span></label><textarea id="content" maxlength="500" required placeholder="Coffee line is moving fast near…"></textarea><div class="form-grid"><div><label for="location">Location <span>(optional)</span></label><input id="location" maxlength="120" placeholder="Room or landmark"></div><div><label for="category">Category</label><select id="category"><option value="general">General</option><option value="coffee">Coffee</option><option value="help">Help wanted</option><option value="accessibility">Accessibility</option><option value="demo">Live demo</option></select></div></div><fieldset><legend>Expires</legend><div class="options"><label><input type="radio" name="expiry" value="15m"> 15 minutes</label><label><input type="radio" name="expiry" value="1h" checked> One hour</label><label><input type="radio" name="expiry" value="end_of_day"> End of day</label><label><input type="radio" name="expiry" value="custom"> Custom</label></div><input id="custom-expiry" type="datetime-local" aria-label="Custom expiration in Mountain time" hidden></fieldset><button type="submit">Post update</button><p id="form-status" role="status" aria-live="polite"></p></form>
       </section>
       <section aria-labelledby="feed-heading"><div class="feed-title"><h2 id="feed-heading">Recent reports</h2><label for="filter">Show <select id="filter"><option value="all">All reports</option><option value="coffee">Coffee</option><option value="help">Help wanted</option><option value="accessibility">Accessibility</option><option value="demo">Live demos</option></select></label></div><p id="feed-status" role="status" aria-live="polite"></p><div id="feed" class="feed"></div></section>
       <footer>Reports are attendee observations, not verified information. AI, moderation, questions, and official schedule ingestion are intentionally not enabled yet.</footer>
-    </main><script>window.HIVEMIND_POLL_SECONDS={{ poll_seconds }};</script><script src="/static/app.js"></script><script src="/static/ui/topbar.js" defer></script>
+    </main><script>window.HIVEMIND_POLL_SECONDS={{ poll_seconds }};</script><script src="/static/app.js"></script>
   </body>
 </html>

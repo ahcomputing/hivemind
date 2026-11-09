@@ -192,6 +192,7 @@ def create_app(
         if not csrf_token or not secrets.compare_digest(digest(csrf_token), session["csrf_hash"]):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF validation failed")
         now = datetime.now(UTC)
+        expires_at = expiry_for(payload, now)
         rate_window = int(now.timestamp() // runtime_settings.report_rate_limit_seconds)
         if not await repository.consume_report_slot(
             session_id, rate_window, runtime_settings.report_rate_limit_count
@@ -204,7 +205,7 @@ def create_app(
             "content": payload.content,
             "location": payload.location,
             "category": payload.category,
-            "expires_at": expiry_for(payload, now),
+            "expires_at": expires_at,
             "created_at": now,
             "status": "active",
             "session_id": session_id,

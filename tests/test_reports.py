@@ -29,6 +29,10 @@ def test_create_and_list_shared_report(client):
     assert "session_id" not in feed[0]
 
 
+def test_home_renders(client):
+    assert client.get("/").status_code == 200
+
+
 def test_validation_and_past_custom_expiration(client):
     csrf = bootstrap(client)
     assert post_report(client, csrf, content=" ").status_code == 422
