@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from hivemind.config import Settings
 from hivemind.main import create_app
-from hivemind.summaries import OpportunitySummary, SummaryBullet
+from hivemind.summaries import OpenAISummarizer, OpportunitySummary, SummaryBullet
 from tests.conftest import FakeRepository
 
 
@@ -118,3 +118,43 @@ def test_budget_months_are_isolated():
     assert asyncio.run(repository.reserve_openai_budget("2026-11", 100, 100, datetime.now(UTC)))
     assert not asyncio.run(repository.reserve_openai_budget("2026-11", 1, 100, datetime.now(UTC)))
     assert asyncio.run(repository.reserve_openai_budget("2026-12", 100, 100, datetime.now(UTC)))
+
+
+def test_openai_request_has_strict_schema_and_excludes_private_report_fields():
+    class Response:
+        status = "completed"
+        output_text = '{"bullets":[{"text":"Official session soon.","source_ids":["official:sessionize:123"]}]}'
+
+        class usage:
+            input_tokens = 100
+            output_tokens = 20
+
+    class Responses:
+        async def create(self, **kwargs):
+            self.kwargs = kwargs
+            return Response()
+
+    class Client:
+        def __init__(self):
+            self.responses = Responses()
+
+        async def close(self):
+            return None
+
+    summarizer = OpenAISummarizer(enabled_settings())
+    fake_client = Client()
+    summarizer.client = fake_client
+    report = {
+        "id": "report-1", "content": "Meet by the fountain", "location": "Atrium",
+        "starts_at": datetime.now(UTC), "expires_at": datetime.now(UTC) + timedelta(hours=1),
+        "created_at": datetime.now(UTC), "session_id": "private-session", "avatar_seed": "private-avatar",
+    }
+    summary, actual = asyncio.run(summarizer.generate([official_event()], [report]))
+    request = fake_client.responses.kwargs
+    assert request["model"] == "gpt-6-luna"
+    assert request["store"] is False
+    assert request["text"]["format"]["strict"] is True
+    assert "private-session" not in request["input"]
+    assert "private-avatar" not in request["input"]
+    assert summary.bullets[0].source_ids == ["official:sessionize:123"]
+    assert actual == 20
